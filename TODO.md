@@ -46,15 +46,18 @@ before the Android client is built against it.
 - [x] Rate limit: 60 publishes per minute per token, over a sliding window, answered with
       `429` and a `Retry-After`. Every attempt is charged, including one the handler goes
       on to reject; a request that never authenticated is not. Subscribing is uncapped.
+- [x] Reject publish bodies larger than 4096 bytes with `413`. The limit is counted in
+      bytes and enforced while the body is read — before the token is checked — so an
+      unauthenticated client can no longer make the server hold a large body.
 
 ## Server (v0.1)
 
 The self-hostable pub/sub core.
 
 ### Auth & safety
-- [ ] Reject payloads larger than 4 KB. Until this lands, the body of an unauthorized
-      publish is still read before the token is checked, bounded only by the framework's
-      1 MiB default.
+- [ ] Bound the request headers too. The body is capped at 4096 bytes, but `X-Title` and
+      `X-Tags` are only bounded by Node's 16 KiB header limit, and a 16 KiB title becomes
+      a 16 KiB notification. No length is checked or truncated today.
 - [ ] Manage minted tokens: list them, and revoke one without editing the database by
       hand. Minting is all the CLI can do today.
 - [ ] Decide whether the publish rate limit needs to outlive the process. It is counted

@@ -18,6 +18,13 @@ const SMALL_LIMIT = 1024;
 const PAYLOAD = 'x'.repeat(200_000);
 
 /**
+ * These tests have to fill the kernel's socket buffer before the server's own queue
+ * grows at all, which takes megabytes. The shipped 4 KB publish limit would need
+ * hundreds of round trips to get there, so raise it to admit one `PAYLOAD` per publish.
+ */
+const BODY_LIMIT_OFF = PAYLOAD.length;
+
+/**
  * Longer than any test here runs. The keepalive drops an unresponsive subscriber all
  * by itself, so it is held off: what these tests watch must be backpressure or nothing.
  */
@@ -55,6 +62,7 @@ describe('backpressure on GET /:topic/ws', () => {
       broker,
       keepaliveIntervalMs: KEEPALIVE_OFF_MS,
       maxBufferedBytes,
+      maxBodyBytes: BODY_LIMIT_OFF,
     }));
     httpBase = await app.listen({ port: 0, host: '127.0.0.1' });
     wsBase = httpBase.replace(/^http/, 'ws');
@@ -165,8 +173,8 @@ describe('backpressure on GET /:topic/ws', () => {
     const socket = await connect('alpha');
     socket.pause();
 
-    // Nothing is passed to `buildApp`, so this fills MAX_BUFFERED_BYTES itself: proof
-    // the shipped default is wired to the route, not just the one the tests inject.
+    // No buffer limit is passed to `buildApp`, so this fills MAX_BUFFERED_BYTES itself:
+    // proof the shipped default is wired to the route, not just the one tests inject.
     await publishUntilDropped('alpha');
     expect(broker.listenerCount('alpha')).toBe(0);
   });
@@ -188,6 +196,7 @@ describe('backpressure on GET /:topic/json', () => {
       broker,
       keepaliveIntervalMs,
       maxBufferedBytes: SMALL_LIMIT,
+      maxBodyBytes: BODY_LIMIT_OFF,
     }));
     httpBase = await app.listen({ port: 0, host: '127.0.0.1' });
   }

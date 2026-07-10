@@ -1,10 +1,12 @@
 import fastifyWebsocket from '@fastify/websocket';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 import { registerAuth } from './auth.js';
 import { Broker } from './broker.js';
 import {
+  MAX_BODY_BYTES,
   MAX_TOPIC_LIST_LENGTH,
   TOPIC_RULE,
+  bodyRule,
   createMessage,
   headerValue,
   isValidTopic,
@@ -51,6 +53,12 @@ export interface AppOptions {
    * rate-limit tests, which would otherwise have to publish 60 times to reach the cap.
    */
   publishRateLimit?: number;
+  /**
+   * The largest publish body accepted, in bytes. Defaults to {@link MAX_BODY_BYTES}.
+   * Raised by the backpressure tests, which stall a subscriber by filling the socket
+   * underneath it and would need hundreds of messages to do that 4 KB at a time.
+   */
+  maxBodyBytes?: number;
 }
 
 /**
@@ -60,14 +68,31 @@ export interface AppOptions {
  * `app.inject(...)` without binding a real socket.
  */
 export function buildApp(options: AppOptions = {}): FastifyInstance {
+  const maxBodyBytes = options.maxBodyBytes ?? MAX_BODY_BYTES;
+
   const app = Fastify({
     logger: false,
+    // A body over the limit is refused while it is being read, which is earlier than
+    // any hook of ours can run — earlier, in particular, than the one that
+    // authenticates. That ordering is the point: an anonymous client cannot make the
+    // server hold a megabyte for it just by opening a request.
+    bodyLimit: maxBodyBytes,
     // A multiplexed subscribe names all of its topics in one path segment, which
     // overruns the router's 100-character default and is answered with `414` before
     // the route runs. Admit any list the subscribe routes would accept, and let them
     // be the ones to reject what is too long.
     routerOptions: { maxParamLength: MAX_TOPIC_LIST_LENGTH },
   });
+
+  // Report an over-long body in the shape every other refusal uses. Everything else is
+  // handed back to Fastify, whose default handler this one replaces.
+  app.setErrorHandler<FastifyError>((error, _request, reply) => {
+    if (error.code === 'FST_ERR_CTP_BODY_TOO_LARGE') {
+      return reply.code(413).send({ error: bodyRule(maxBodyBytes) });
+    }
+    return reply.send(error);
+  });
+
   const broker = options.broker ?? new Broker();
 
   const store = options.store ?? new MessageStore();

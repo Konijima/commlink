@@ -28,6 +28,24 @@ const RESERVED_TOPICS = new Set(['healthz']);
 export const TOPIC_RULE = `topic must be 1-${MAX_TOPIC_LENGTH} characters of A-Z, a-z, 0-9, hyphen or underscore`;
 
 /**
+ * The largest publish body the server will read, in bytes.
+ *
+ * A message becomes a notification on a phone's lock screen, where a few hundred
+ * characters is already more than anyone reads. The limit is generous against that and
+ * still small enough that the body of a request the server has not yet authenticated
+ * cannot cost it anything worth counting.
+ */
+export const MAX_BODY_BYTES = 4096;
+
+/**
+ * What the server tells a client whose publish body is over the limit — which the app
+ * may have been built with a different one of, so it is named rather than assumed.
+ */
+export function bodyRule(maxBytes: number = MAX_BODY_BYTES): string {
+  return `message body must be at most ${maxBytes} bytes`;
+}
+
+/**
  * How many topics one connection may multiplex. The limit keeps a single client from
  * pinning an unbounded subscription set — and the URL that names it — on the server.
  */
