@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { Broker } from '../src/broker.js';
@@ -8,6 +8,7 @@ import {
   RATE_LIMIT_RULE,
   RATE_LIMIT_WINDOW_MS,
   RateLimiter,
+  publishRateLimit,
 } from '../src/ratelimit.js';
 import { TokenStore } from '../src/tokens.js';
 import { bearer } from './helpers.js';
@@ -121,6 +122,31 @@ describe('RateLimiter', () => {
     for (let n = 0; n < PUBLISH_RATE_LIMIT; n += 1) expect(limiter.take(KEY, 0)).toBeNull();
 
     expect(limiter.take(KEY, 0)).toBe(60);
+  });
+});
+
+describe('publishRateLimit', () => {
+  it('fails loudly when it runs before the request was authenticated', async () => {
+    const limiter = new RateLimiter();
+    const hook = publishRateLimit(limiter);
+    // No `preValidation` ran, so nothing named a token to charge.
+    const request = { tokenId: undefined } as FastifyRequest;
+    const reply = {} as FastifyReply;
+
+    await expect(hook(request, reply)).rejects.toThrow(/before the request was authenticated/);
+  });
+
+  it('spends a slot of the token that authenticated, not of some shared budget', async () => {
+    const limiter = new RateLimiter(1, 10_000);
+    const hook = publishRateLimit(limiter);
+    // A request within budget is let through untouched, so the reply is never used.
+    const reply = {} as FastifyReply;
+    const requestFor = (tokenId: number) => ({ tokenId }) as FastifyRequest;
+
+    // One token spends its only slot; a different token still has its own.
+    await hook(requestFor(1), reply);
+    expect(limiter.take(1)).not.toBeNull();
+    expect(limiter.take(2)).toBeNull();
   });
 });
 
