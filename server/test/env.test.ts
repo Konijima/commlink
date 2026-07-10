@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { envLineRule, loadEnvFile, parseEnv } from '../src/env.js';
+import { envDuplicateRule, envLineRule, loadEnvFile, parseEnv } from '../src/env.js';
 
 const tmpDirs: string[] = [];
 
@@ -80,6 +80,27 @@ describe('parseEnv', () => {
     expect(() => parseEnv('a.b=c')).toThrow(envLineRule(1));
     expect(() => parseEnv('a b=c')).toThrow(envLineRule(1));
   });
+
+  it('throws naming both lines for a key set twice', () => {
+    // A duplicate is ambiguous — silently keeping one line would leave the operator
+    // running on a value they may not have meant — so it is refused, not resolved.
+    expect(() => parseEnv('PORT=4500\nPORT=8080')).toThrow(
+      envDuplicateRule('PORT', 2, 1),
+    );
+  });
+
+  it('counts only assignment lines when naming a duplicate', () => {
+    // Comments and blank lines do not shift the reported line numbers off the source.
+    const contents = 'PORT=4500\n# a comment\n\nHOST=a\nPORT=8080';
+    expect(() => parseEnv(contents)).toThrow(envDuplicateRule('PORT', 5, 1));
+  });
+
+  it('treats keys as case-sensitive, so PORT and port are distinct', () => {
+    expect(parseEnv('PORT=4500\nport=8080')).toEqual([
+      { key: 'PORT', value: '4500' },
+      { key: 'port', value: '8080' },
+    ]);
+  });
 });
 
 describe('loadEnvFile', () => {
@@ -118,6 +139,16 @@ describe('loadEnvFile', () => {
     expect(() => loadEnvFile({ path: envFile('PORT=4500\ngarbage'), env })).toThrow(
       envLineRule(2),
     );
+  });
+
+  it('refuses a file that sets the same key twice, applying nothing', () => {
+    // The refusal comes from the parse, before any key is applied, so a duplicate leaves
+    // the environment untouched rather than half-loaded up to the offending line.
+    const env: NodeJS.ProcessEnv = {};
+    expect(() => loadEnvFile({ path: envFile('PORT=4500\nPORT=8080'), env })).toThrow(
+      envDuplicateRule('PORT', 2, 1),
+    );
+    expect(env).toEqual({});
   });
 
   it('leaves an empty value distinguishable from an unset one', () => {
