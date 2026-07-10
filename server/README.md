@@ -144,9 +144,12 @@ body or a title; an empty request with neither is rejected with `400`.
 ### Metadata size
 
 `X-Title` and `X-Tags` are bounded like the body is, and for the same reason: a title is
-one line on a lock screen, and nothing that long belongs there. Each is measured in the
-bytes it arrived as. Over-long metadata is rejected with `400` naming the rule, rather
-than truncated — half a title is not what the sender asked to be shown:
+one line on a lock screen, and nothing that long belongs there. Both are measured in
+bytes, not characters. A title is measured exactly as it arrived, so padding a long one
+with space does not buy it room; a tag is measured after the space around it is dropped,
+so what is bounded is the tag a subscriber is actually sent. Over-long metadata is
+rejected with `400` naming the rule, rather than truncated — half a title is not what the
+sender asked to be shown:
 
 ```bash
 curl -i -H "Authorization: Bearer $TOKEN" -H "X-Tags: $(printf 'a,%.0s' {1..17})" \
@@ -156,6 +159,13 @@ curl -i -H "Authorization: Bearer $TOKEN" -H "X-Tags: $(printf 'a,%.0s' {1..17})
 ```
 
 Empty tags are dropped before the count, so `ci,,deploy` is two tags.
+
+Send each header once. A metadata header sent twice is folded into one comma-joined value
+before the server sees it, so two `X-Title` headers make one title reading `alpha, beta`,
+and two `X-Priority` headers make a value that is not an integer and is rejected. The size
+limits are applied to the joined value, so repeating a header wins no extra room. A
+repeated `Authorization` header is different again: the first is used and the rest are
+discarded.
 
 ### Metadata encoding
 

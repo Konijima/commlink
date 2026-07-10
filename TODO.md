@@ -97,9 +97,9 @@ The self-hostable pub/sub core.
       replayed backlog is written through the same path as a live message, so a large
       replay to a slow subscriber can drop the connection mid-replay. The behaviour is
       unpinned by any test.
-- [ ] Cover who owns the message store: the app closes a store it created and leaves an
-      injected one open. Nothing tests either half, and closing a database twice is a
-      no-op, so a regression would pass the suite.
+- [ ] Cover who owns a store: the app closes a message store or a token store it created
+      itself, and leaves an injected one open. Nothing tests either half for either store,
+      and closing a database twice is a no-op, so a regression would pass the suite.
 - [ ] Cover the refusal to start on a malformed `RETENTION_HOURS`. The parser and the app
       builder each reject one, but nothing runs the server as a process and asserts it
       exits non-zero with the reason on stderr — which is the behaviour an operator with a
