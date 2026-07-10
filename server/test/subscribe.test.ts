@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { WebSocket } from 'ws';
 import { buildApp } from '../src/app';
 import { Broker } from '../src/broker';
+import { MAX_SUBSCRIBE_TOPICS, TOPIC_LIST_RULE } from '../src/message';
 import type { Message } from '../src/message';
 
 describe('GET /:topic/ws', () => {
@@ -28,10 +29,16 @@ describe('GET /:topic/ws', () => {
     await app.close();
   });
 
-  /** Open a subscriber and resolve once it is attached to the topic. */
-  async function connect(topic: string): Promise<WebSocket> {
-    const before = broker.listenerCount(topic);
-    const socket = new WebSocket(`${wsBase}/${topic}/ws`);
+  /**
+   * Open a subscriber on one topic, or on a comma-separated list of them, and resolve
+   * once it is attached.
+   */
+  async function connect(topicList: string): Promise<WebSocket> {
+    // One `broker.subscribe` call attaches the listener to every topic at once, so
+    // seeing it on the first proves it landed on all of them.
+    const [first] = topicList.split(',');
+    const before = broker.listenerCount(first);
+    const socket = new WebSocket(`${wsBase}/${topicList}/ws`);
     sockets.push(socket);
 
     await new Promise<void>((resolve, reject) => {
@@ -41,7 +48,7 @@ describe('GET /:topic/ws', () => {
 
     // The handshake completes before the route handler subscribes, so wait for the
     // listener to be attached rather than racing the first publish against it.
-    await vi.waitFor(() => expect(broker.listenerCount(topic)).toBeGreaterThan(before));
+    await vi.waitFor(() => expect(broker.listenerCount(first)).toBeGreaterThan(before));
 
     return socket;
   }
@@ -53,6 +60,18 @@ describe('GET /:topic/ws', () => {
   function nextFrame(socket: WebSocket): Promise<Message> {
     return new Promise((resolve, reject) => {
       socket.once('message', (data) => resolve(JSON.parse(data.toString()) as Message));
+      socket.once('error', reject);
+    });
+  }
+
+  /** Collect the next `count` frames, in the order they arrive. */
+  function nextFrames(socket: WebSocket, count: number): Promise<Message[]> {
+    return new Promise((resolve, reject) => {
+      const frames: Message[] = [];
+      socket.on('message', (data) => {
+        frames.push(JSON.parse(data.toString()) as Message);
+        if (frames.length === count) resolve(frames);
+      });
       socket.once('error', reject);
     });
   }
@@ -176,10 +195,111 @@ describe('GET /:topic/ws', () => {
       const { code, reason } = await closeEvent(socket);
 
       expect(code).toBe(1008);
-      expect(reason).toBe('invalid topic');
+      expect(reason).toMatch(/^topic must be/);
       expect(broker.listenerCount(topic)).toBe(0);
     },
   );
+
+  describe('multiplexed over one connection', () => {
+    it('delivers messages from every topic in the list', async () => {
+      const socket = await connect('alpha,beta,gamma');
+      const frames = nextFrames(socket, 3);
+
+      await publish('alpha', 'from alpha');
+      await publish('beta', 'from beta');
+      await publish('gamma', 'from gamma');
+
+      expect((await frames).map((frame) => frame.message)).toEqual([
+        'from alpha',
+        'from beta',
+        'from gamma',
+      ]);
+    });
+
+    it('names the source topic on each frame, so a client can tell them apart', async () => {
+      const socket = await connect('alpha,beta');
+      const frames = nextFrames(socket, 2);
+
+      await publish('beta', 'hello');
+      await publish('alpha', 'hello');
+
+      expect((await frames).map((frame) => frame.topic)).toEqual(['beta', 'alpha']);
+    });
+
+    it('attaches exactly one listener to each topic in the list', async () => {
+      await connect('alpha,beta');
+
+      expect(broker.listenerCount('alpha')).toBe(1);
+      expect(broker.listenerCount('beta')).toBe(1);
+    });
+
+    it('delivers one frame per message when a topic is listed twice', async () => {
+      const socket = await connect('alpha,alpha');
+      expect(broker.listenerCount('alpha')).toBe(1);
+
+      const frames = nextFrames(socket, 2);
+      await publish('alpha', 'first');
+      await publish('alpha', 'second');
+
+      expect((await frames).map((frame) => frame.message)).toEqual(['first', 'second']);
+    });
+
+    it('does not deliver a topic the client did not ask for', async () => {
+      const socket = await connect('alpha,beta');
+      const frame = nextFrame(socket);
+
+      // `gamma` fans out first; had it leaked, it would arrive as the first frame.
+      await publish('gamma', 'not subscribed');
+      await publish('beta', 'subscribed');
+
+      expect((await frame).message).toBe('subscribed');
+    });
+
+    it('detaches from every topic when the socket closes', async () => {
+      const socket = await connect('alpha,beta,gamma');
+
+      socket.close();
+
+      await vi.waitFor(() => {
+        expect(broker.listenerCount('alpha')).toBe(0);
+        expect(broker.listenerCount('beta')).toBe(0);
+        expect(broker.listenerCount('gamma')).toBe(0);
+      });
+    });
+
+    it('closes a list with one bad entry with 1008, subscribing to none of it', async () => {
+      const socket = new WebSocket(`${wsBase}/alpha,bad.topic/ws`);
+      sockets.push(socket);
+
+      const { code, reason } = await closeEvent(socket);
+
+      expect(code).toBe(1008);
+      expect(reason).toMatch(/^topic must be/);
+      expect(broker.listenerCount('alpha')).toBe(0);
+    });
+
+    it('closes an over-long list with 1008', async () => {
+      const names = Array.from({ length: MAX_SUBSCRIBE_TOPICS + 1 }, (_, i) => `topic${i}`);
+      const socket = new WebSocket(`${wsBase}/${names.join(',')}/ws`);
+      sockets.push(socket);
+
+      const { code, reason } = await closeEvent(socket);
+
+      expect(code).toBe(1008);
+      expect(reason).toBe(TOPIC_LIST_RULE);
+      expect(broker.listenerCount('topic0')).toBe(0);
+    });
+
+    it('accepts a list exactly at the limit', async () => {
+      const names = Array.from({ length: MAX_SUBSCRIBE_TOPICS }, (_, i) => `topic${i}`);
+      const socket = await connect(names.join(','));
+
+      const frame = nextFrame(socket);
+      await publish('topic49', 'hello');
+
+      expect((await frame).topic).toBe('topic49');
+    });
+  });
 
   it('still serves the health probe alongside the subscribe route', async () => {
     const res = await fetch(`${httpBase}/healthz`);

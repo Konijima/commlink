@@ -2,6 +2,7 @@ import fastifyWebsocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { Broker } from './broker';
 import {
+  MAX_TOPIC_LIST_LENGTH,
   TOPIC_RULE,
   createMessage,
   headerValue,
@@ -25,7 +26,14 @@ export interface AppOptions {
  * `app.inject(...)` without binding a real socket.
  */
 export function buildApp(options: AppOptions = {}): FastifyInstance {
-  const app = Fastify({ logger: false });
+  const app = Fastify({
+    logger: false,
+    // A multiplexed subscribe names all of its topics in one path segment, which
+    // overruns the router's 100-character default and is answered with `414` before
+    // the route runs. Admit any list the subscribe routes would accept, and let them
+    // be the ones to reject what is too long.
+    routerOptions: { maxParamLength: MAX_TOPIC_LIST_LENGTH },
+  });
   const broker = options.broker ?? new Broker();
 
   // A message body is opaque text, whatever the sender labels it. Replacing the

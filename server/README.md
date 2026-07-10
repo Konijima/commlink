@@ -72,8 +72,22 @@ published to that topic, for as long as the socket stays open:
 Subscribers are live-only: messages published while no socket was open are not
 replayed on connect. Caching and `?since=` replay are on the roadmap.
 
-Subscribing to a name that is not a valid topic closes the socket with code `1008`
-and the reason `invalid topic`.
+Subscribing to a name that is not a valid topic closes the socket with code `1008`;
+the close reason says which rule the request broke.
+
+### Several topics over one connection
+
+Name the topics separated by commas to receive all of them on a single socket:
+
+```bash
+# one connection, three topics
+websocat ws://127.0.0.1:4500/deploys,alerts,backups/ws
+```
+
+Every frame carries its own `topic`, which is how a client tells the streams apart. A
+topic named twice is still delivered once. At most 50 topics may share a connection,
+and if any name in the list is invalid the whole subscription is refused — none of the
+topics are attached.
 
 ### Without a WebSocket
 
@@ -88,8 +102,14 @@ curl -sN http://127.0.0.1:4500/mytopic/json
 ```
 
 `curl` needs `-N` here: without it the output is buffered and nothing appears until the
-stream ends. The stream is live-only, exactly like the socket. An invalid topic is
-rejected with `400` before the stream opens.
+stream ends. The stream is live-only, exactly like the socket, and multiplexes over a
+comma-separated list the same way:
+
+```bash
+curl -sN http://127.0.0.1:4500/deploys,alerts/json
+```
+
+An invalid or over-long topic list is rejected with `400` before the stream opens.
 
 ## Configuration
 
@@ -112,9 +132,9 @@ see [`../deploy/`](../deploy/).
 | ------ | ------------------------ | -------------------------------------------------- |
 | `GET`  | `/healthz`               | Liveness probe (200 + uptime). **Available now.**  |
 | `POST` | `/:topic`                | Publish a message to a topic. **Available now.**   |
-| `GET`  | `/:topic/ws`             | Subscribe over WebSocket. **Available now.**       |
-| `GET`  | `/:topic/json`           | Subscribe over plain HTTP. **Available now.**      |
+| `GET`  | `/:topics/ws`            | Subscribe over WebSocket. **Available now.**       |
+| `GET`  | `/:topics/json`          | Subscribe over plain HTTP. **Available now.**      |
 
-Subscribing to several topics over one connection (`/:topic1,topic2/ws`) is on the
-roadmap. Published messages currently fan out to live subscribers only; they are not yet
-cached or replayed, and no endpoint requires a bearer token yet.
+Both subscribe routes take one topic or a comma-separated list of them. Published
+messages currently fan out to live subscribers only; they are not yet cached or
+replayed, and no endpoint requires a bearer token yet.
