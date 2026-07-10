@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { WebSocket } from 'ws';
 import { buildApp } from '../src/app';
 import { Broker } from '../src/broker';
-import { MAX_SUBSCRIBE_TOPICS, TOPIC_LIST_RULE } from '../src/message';
+import { MAX_SUBSCRIBE_TOPICS, SINCE_RULE, TOPIC_LIST_RULE } from '../src/message';
 import type { Message } from '../src/message';
 
 describe('GET /:topic/ws', () => {
@@ -88,6 +88,50 @@ describe('GET /:topic/ws', () => {
       headers: { 'content-type': 'text/plain', ...headers },
       body,
     });
+  }
+
+  /** Publish and resolve with the message the server stored, whose `timestamp` bounds a replay. */
+  async function publishMessage(topic: string, body: string): Promise<Message> {
+    const response = await publish(topic, body);
+    expect(response.status).toBe(200);
+    return (await response.json()) as Message;
+  }
+
+  /**
+   * Open a subscriber that collects frames from the moment the socket exists, and
+   * resolve once it is attached to the broker.
+   *
+   * Replayed frames are written the instant the route attaches its listener, so a
+   * `message` handler added after the connection settles would race them. This one
+   * cannot: it is attached before the socket can have received anything at all.
+   */
+  async function collect(
+    path: string,
+  ): Promise<{ socket: WebSocket; take: (count: number) => Promise<Message[]> }> {
+    // `path` is `<topics>/ws?<query>`; the first topic is what proves the attach.
+    const [first] = path.split('/')[0].split(',');
+    const before = broker.listenerCount(first);
+
+    const socket = new WebSocket(`${wsBase}/${path}`);
+    sockets.push(socket);
+
+    const frames: Message[] = [];
+    socket.on('message', (data) => frames.push(JSON.parse(data.toString()) as Message));
+
+    await new Promise<void>((resolve, reject) => {
+      socket.once('open', () => resolve());
+      socket.once('error', reject);
+    });
+    await vi.waitFor(() => expect(broker.listenerCount(first)).toBeGreaterThan(before));
+
+    return {
+      socket,
+      take: (count) =>
+        vi.waitFor(() => {
+          expect(frames.length).toBeGreaterThanOrEqual(count);
+          return frames.slice(0, count);
+        }),
+    };
   }
 
   it('pushes a published message to a live subscriber', async () => {
@@ -199,6 +243,105 @@ describe('GET /:topic/ws', () => {
       expect(broker.listenerCount(topic)).toBe(0);
     },
   );
+
+  describe('?since= replay', () => {
+    it('replays a message published before the socket connected', async () => {
+      const missed = await publishMessage('alpha', 'published while offline');
+
+      const { take } = await collect(`alpha/ws?since=${missed.timestamp}`);
+
+      expect(await take(1)).toEqual([missed]);
+    });
+
+    it('replays the backlog in publication order', async () => {
+      const first = await publishMessage('alpha', 'first');
+      await publishMessage('alpha', 'second');
+      await publishMessage('alpha', 'third');
+
+      const { take } = await collect(`alpha/ws?since=${first.timestamp}`);
+
+      expect((await take(3)).map((frame) => frame.message)).toEqual([
+        'first',
+        'second',
+        'third',
+      ]);
+    });
+
+    it('streams live messages after the replayed ones', async () => {
+      const missed = await publishMessage('alpha', 'published while offline');
+
+      const { take } = await collect(`alpha/ws?since=${missed.timestamp}`);
+      await publish('alpha', 'published while listening');
+
+      expect((await take(2)).map((frame) => frame.message)).toEqual([
+        'published while offline',
+        'published while listening',
+      ]);
+    });
+
+    it('replays a message published in the same second as the bound', async () => {
+      // Timestamps resolve to the second, so the bound is inclusive: a client asking
+      // for everything since the last message it saw must not lose one published
+      // during that same second. The cost is a duplicate, which clients drop by `id`.
+      const missed = await publishMessage('alpha', 'same second as the bound');
+
+      const { take } = await collect(`alpha/ws?since=${missed.timestamp}`);
+
+      expect(await take(1)).toEqual([missed]);
+    });
+
+    it('replays nothing published before the bound', async () => {
+      const old = await publishMessage('alpha', 'older than the bound');
+
+      const { take } = await collect(`alpha/ws?since=${old.timestamp + 1}`);
+      await publish('alpha', 'published while listening');
+
+      // Had the old message replayed, it would be the first frame.
+      expect((await take(1)).map((frame) => frame.message)).toEqual([
+        'published while listening',
+      ]);
+    });
+
+    it('replays the whole backlog for ?since=0', async () => {
+      await publishMessage('alpha', 'the very first message');
+
+      const { take } = await collect('alpha/ws?since=0');
+
+      expect((await take(1)).map((frame) => frame.message)).toEqual(['the very first message']);
+    });
+
+    it('replays only the topics the client subscribed to', async () => {
+      const missed = await publishMessage('alpha', 'from alpha');
+      await publishMessage('gamma', 'from gamma');
+      await publishMessage('beta', 'from beta');
+
+      const { take } = await collect(`alpha,beta/ws?since=${missed.timestamp}`);
+
+      expect((await take(2)).map((frame) => frame.message)).toEqual(['from alpha', 'from beta']);
+    });
+
+    it('replays nothing when the topic has no stored messages', async () => {
+      const { socket, take } = await collect('alpha/ws?since=0');
+      await publish('alpha', 'the only message');
+
+      expect((await take(1)).map((frame) => frame.message)).toEqual(['the only message']);
+      expect(socket.readyState).toBe(socket.OPEN);
+    });
+
+    it.each(['yesterday', '-1', '1.5', ''])(
+      'closes a subscription with since=%j with 1008',
+      async (since) => {
+        const socket = new WebSocket(`${wsBase}/alpha/ws?since=${encodeURIComponent(since)}`);
+        sockets.push(socket);
+
+        const { code, reason } = await closeEvent(socket);
+
+        expect(code).toBe(1008);
+        expect(reason).toBe(SINCE_RULE);
+        expect(broker.listenerCount('alpha')).toBe(0);
+      },
+    );
+  });
 
   describe('multiplexed over one connection', () => {
     it('delivers messages from every topic in the list', async () => {

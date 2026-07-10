@@ -38,8 +38,9 @@ publisher ──HTTP POST──►  commlink server  ──WebSocket──►  A
   priority, and tags.
 - **Subscribe:** the app holds a single multiplexed WebSocket for all its topics and
   turns each incoming message into a system notification.
-- **Never miss a message** *(in progress)*: every message will be stored and can be
-  replayed since a given timestamp when a client reconnects.
+- **Never miss a message:** every message is stored, and a subscriber that reconnects
+  with `?since=<unix_ts>` is sent what it missed before the live stream resumes. The
+  Android client will use this on every reconnect.
 
 ## Components
 

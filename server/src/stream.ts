@@ -3,7 +3,9 @@ import type { FastifyInstance } from 'fastify';
 import { MAX_BUFFERED_BYTES } from './backpressure';
 import type { Broker } from './broker';
 import { KEEPALIVE_INTERVAL_MS, everyInterval } from './keepalive';
-import { parseTopicList } from './message';
+import type { Message } from './message';
+import { parseSince, parseTopicList } from './message';
+import type { MessageStore } from './store';
 
 export interface StreamOptions {
   /** How often an idle stream is sent a blank line. Shortened by the keepalive tests. */
@@ -20,13 +22,14 @@ export interface StreamOptions {
  *     curl -sN http://127.0.0.1:4500/mytopic,other/json
  *
  * It is the fallback for clients that cannot open a WebSocket, and multiplexes over
- * a comma-separated topic list just as the socket does. Like the socket, it is
- * live-only, and the response never completes on its own: the client reads until it
- * disconnects.
+ * a comma-separated topic list just as the socket does. It honours `?since=<unix_ts>`
+ * exactly as the socket does, replaying the stored backlog before the live messages.
+ * The response never completes on its own: the client reads until it disconnects.
  */
 export function registerStreamRoute(
   app: FastifyInstance,
   broker: Broker,
+  store: MessageStore,
   options: StreamOptions = {},
 ): void {
   const intervalMs = options.keepaliveIntervalMs ?? KEEPALIVE_INTERVAL_MS;
@@ -74,45 +77,59 @@ export function registerStreamRoute(
     }
   });
 
-  app.get<{ Params: { topic: string } }>('/:topic/json', (request, reply) => {
-    let topics: string[];
-    try {
-      topics = parseTopicList(request.params.topic);
-    } catch (error) {
-      reply.code(400).send({ error: (error as Error).message });
-      return;
-    }
+  app.get<{ Params: { topic: string }; Querystring: { since?: string } }>(
+    '/:topic/json',
+    (request, reply) => {
+      let topics: string[];
+      let since: number | null;
+      try {
+        topics = parseTopicList(request.params.topic);
+        since = parseSince(request.query.since);
+      } catch (error) {
+        reply.code(400).send({ error: (error as Error).message });
+        return;
+      }
 
-    // Fastify's reply lifecycle assumes a response that ends. This one does not, so
-    // take the socket over and write onto it directly.
-    reply.hijack();
+      // Fastify's reply lifecycle assumes a response that ends. This one does not, so
+      // take the socket over and write onto it directly.
+      reply.hijack();
 
-    const response = reply.raw;
-    response.writeHead(200, {
-      'content-type': 'application/x-ndjson',
-      'cache-control': 'no-store',
-      // Reverse proxies buffer a response body by default, which would hold every
-      // line back until the stream ends — that is, until never.
-      'x-accel-buffering': 'no',
-    });
-    response.flushHeaders();
-    open.add(response);
+      const response = reply.raw;
+      response.writeHead(200, {
+        'content-type': 'application/x-ndjson',
+        'cache-control': 'no-store',
+        // Reverse proxies buffer a response body by default, which would hold every
+        // line back until the stream ends — that is, until never.
+        'x-accel-buffering': 'no',
+      });
+      response.flushHeaders();
+      open.add(response);
 
-    const unsubscribe = broker.subscribe(topics, (message) => {
-      if (!isWritable(response)) return;
-      if (dropIfBackedUp(response)) return;
-      response.write(`${JSON.stringify(message)}\n`);
-    });
+      const send = (message: Message) => {
+        if (!isWritable(response)) return;
+        if (dropIfBackedUp(response)) return;
+        response.write(`${JSON.stringify(message)}\n`);
+      };
 
-    const detach = () => {
-      unsubscribe();
-      open.delete(response);
-    };
+      const unsubscribe = broker.subscribe(topics, send);
 
-    // 'close' fires when the client disconnects and when a shutdown ends the response.
-    // 'error' fires when a write finds the connection gone — and a response stream with
-    // no error listener throws.
-    response.on('close', detach);
-    response.on('error', detach);
-  });
+      const detach = () => {
+        unsubscribe();
+        open.delete(response);
+      };
+
+      // 'close' fires when the client disconnects and when a shutdown ends the response.
+      // 'error' fires when a write finds the connection gone — and a response stream with
+      // no error listener throws.
+      response.on('close', detach);
+      response.on('error', detach);
+
+      // Read the backlog only once the live listener is attached, so a message published
+      // in between is delivered rather than dropped into the gap between the two. See
+      // the same ordering, and the duplicate it can produce, in `subscribe.ts`.
+      if (since !== null) {
+        for (const message of store.since(topics, since)) send(message);
+      }
+    },
+  );
 }

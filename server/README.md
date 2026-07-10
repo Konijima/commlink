@@ -4,9 +4,9 @@ The pub/sub push-notification server: Node.js + TypeScript, Fastify, WebSocket, 
 SQLite. It accepts published messages over HTTP and streams them to subscribed clients
 over WebSocket.
 
-> Early development. Publishing, both subscribe routes and the message cache are live.
-> Replaying the cache to a reconnecting subscriber, and auth, are still being built —
-> see [`../TODO.md`](../TODO.md).
+> Early development. Publishing, both subscribe routes, the message cache and `?since=`
+> replay are live. Retention and auth are still being built — see
+> [`../TODO.md`](../TODO.md).
 
 ## Requirements
 
@@ -73,8 +73,8 @@ published to that topic, for as long as the socket stays open:
 }
 ```
 
-Subscribers are live-only: every message is stored (see [Message cache](#message-cache)),
-but nothing is replayed on connect yet. `?since=` replay is next on the roadmap.
+By default a subscriber sees only what is published while it is connected. Add
+`?since=` to replay what it missed first (see [Catching up](#catching-up)).
 
 Subscribing to a name that is not a valid topic closes the socket with code `1008`;
 the close reason says which rule the request broke.
@@ -106,14 +106,41 @@ curl -sN http://127.0.0.1:4500/mytopic/json
 ```
 
 `curl` needs `-N` here: without it the output is buffered and nothing appears until the
-stream ends. The stream is live-only, exactly like the socket, and multiplexes over a
-comma-separated list the same way:
+stream ends. The stream honours `?since=` and multiplexes over a comma-separated list
+exactly as the socket does:
 
 ```bash
 curl -sN http://127.0.0.1:4500/deploys,alerts/json
 ```
 
 An invalid or over-long topic list is rejected with `400` before the stream opens.
+
+### Catching up
+
+Both subscribe routes take `?since=<unix_ts>`, a time in whole seconds since the Unix
+epoch. Every stored message on the subscribed topics published at or after that second
+is sent first, oldest first, and the live stream follows without a gap:
+
+```bash
+# everything on `deploys` since a given second, then whatever comes next
+curl -sN "http://127.0.0.1:4500/deploys/json?since=1700000000"
+
+# the whole retained backlog
+curl -sN "http://127.0.0.1:4500/deploys/json?since=0"
+```
+
+A client that reconnects passes the `timestamp` of the last message it saw, and misses
+nothing published while it was away. Omit `since` and nothing is replayed.
+
+The bound is **inclusive**, because timestamps resolve to the whole second: a client
+asking for everything since the last message it saw would otherwise lose one published
+during that same second. A message may therefore arrive twice across a reconnect, so
+clients de-duplicate on `id`, which is unique per message.
+
+`since` must be a non-negative whole number. Anything else — a negative, a fraction, a
+word, an empty value — is refused rather than silently ignored: on `/json` with `400`,
+on `/ws` by closing the socket with `1008`. Replay reaches back only as far as the
+messages the cache still holds.
 
 ### Keepalive
 
@@ -149,14 +176,12 @@ a message the server answered `200` for is one that outlives the process. The da
 is the file named by `DB_PATH`, created on first run; a message rejected with `400` is
 never stored.
 
-The cache is what will let a subscriber that was offline — or whose socket dropped —
-catch up on what it missed. The `?since=` parameter that exposes it on the subscribe
-routes is not implemented yet, so today the cache is written but not read back. Nothing
-is deleted yet either; retention lands with it.
+The cache is what lets a subscriber that was offline — or whose socket dropped — catch
+up on what it missed: `?since=` on either subscribe route reads it back (see
+[Catching up](#catching-up)).
 
-Timestamps resolve to the whole second, so replay will be inclusive of the second a
-client last saw and messages can arrive twice across a reconnect. Clients should
-de-duplicate on `id`, which is unique per message.
+Nothing is deleted yet, so the database grows without bound; retention is next on the
+roadmap.
 
 ## Configuration
 
@@ -185,6 +210,6 @@ see [`../deploy/`](../deploy/).
 | `GET`  | `/:topics/ws`            | Subscribe over WebSocket. **Available now.**       |
 | `GET`  | `/:topics/json`          | Subscribe over plain HTTP. **Available now.**      |
 
-Both subscribe routes take one topic or a comma-separated list of them. Published
-messages are cached, but they still fan out to live subscribers only — there is no way
-to ask for a replay yet, and no endpoint requires a bearer token yet.
+Both subscribe routes take one topic or a comma-separated list of them, and both accept
+`?since=<unix_ts>` to replay the cache before streaming live messages. No endpoint
+requires a bearer token yet.

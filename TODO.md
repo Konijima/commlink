@@ -27,17 +27,19 @@ before the Android client is built against it.
       messages for any one connection and drops it past that, so a stalled client can
       no longer grow the heap without bound.
 - [x] Persist every message to SQLite, at `DB_PATH`, before it is fanned out to live
-      subscribers. Nothing reads the cache back yet — that is `?since=` replay, below.
+      subscribers.
+- [x] `?since=<unix_ts>` on subscribe replays missed messages before streaming live ones,
+      on both `/ws` and `/json`. The bound is inclusive to the second, so a reconnecting
+      client can see one message twice and de-duplicates on `id`. A malformed `since` is
+      rejected rather than ignored.
 
 ## Server (v0.1)
 
 The self-hostable pub/sub core.
 
 ### Message cache & replay
-- [ ] `?since=<unix_ts>` on subscribe replays missed messages before streaming live ones.
-      The store can already answer the query; nothing calls it.
 - [ ] Retention: 72h, cleaned by an hourly job. Until this lands the database grows
-      without bound.
+      without bound, and `?since=` can replay arbitrarily far back.
 
 ### Auth & safety
 - [ ] Bearer-token auth on **both** publish and subscribe (`Authorization: Bearer …`,
