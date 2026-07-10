@@ -52,16 +52,16 @@ before the Android client is built against it.
 - [x] Bound the publish metadata headers: `X-Title` to 256 bytes, `X-Tags` to 16 tags of
       64 bytes each. Both are measured in the bytes that arrived, and an over-long one is
       rejected with `400` naming the rule rather than silently truncated.
+- [x] Read `X-Title` and `X-Tags` as UTF-8 (`BUGS.md#2`), so an accented title is stored and
+      delivered as it was sent. The headers carry raw UTF-8 bytes — no RFC 2047 encoding —
+      and bytes that are not UTF-8 are rejected with `400` naming the rule. The byte limits
+      are unchanged, since decoding is lossless.
 
 ## Server (v0.1)
 
 The self-hostable pub/sub core.
 
 ### Auth & safety
-- [ ] Decode a non-ASCII `X-Title` or `X-Tags` as UTF-8 (`BUGS.md#2`). Header values
-      arrive latin1-decoded, so an accented title is stored and delivered as mojibake.
-      Settle what a client should send first — raw UTF-8 bytes, or RFC 2047 encoding —
-      since that choice is what the Android client will have to implement.
 - [ ] Manage minted tokens: list them, and revoke one without editing the database by
       hand. Minting is all the CLI can do today.
 - [ ] Decide whether the publish rate limit needs to outlive the process. It is counted

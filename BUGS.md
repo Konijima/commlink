@@ -13,7 +13,7 @@ Notes: <cause, workaround, or fix once known>
 
 ---
 
-### 2 — a non-ASCII title is stored and delivered as mojibake   [open]   severity: medium
+### 2 — a non-ASCII title is stored and delivered as mojibake   [fixed]   severity: medium
 Repro: publish a title with an accent, then read the message back.
 
 ```
@@ -26,11 +26,22 @@ Notes: Node decodes request header values as latin1 — one character per byte r
 so the two bytes of a UTF-8 `é` arrive as the two characters `Ã©`, and that is what is
 persisted and streamed to subscribers. The body is unaffected: it is read as UTF-8.
 
-A fix is `Buffer.from(value, 'latin1').toString('utf8')` on `X-Title` and `X-Tags`, but
-what a client is expected to send should be settled first — raw UTF-8 bytes, or RFC 2047
-encoded words — because a lone latin1 title (`Café` sent as one 0xE9 byte) decodes to a
-replacement character under either reading. Bounding the headers by their *received*
-bytes (256 for a title) is unaffected by this and stays correct either way.
+Settled that the headers are **UTF-8 on the wire**, not RFC 2047 encoded words: a client
+sends the bytes of the text it wants shown, which is what `curl -H "X-Title: Café"` from a
+UTF-8 terminal already does, and requiring an encoding scheme would burden every client
+for a title the server can read as-is. Bytes that are not UTF-8 are now refused with `400`
+naming the rule, rather than delivered as whatever they spell in some other encoding — a
+latin1 `Café` (one 0xE9 byte) is ambiguous, and guessing quietly delivers the wrong title.
+
+Fixed by decoding `X-Title` and `X-Tags` from the bytes they arrived as. The byte bounds
+are unchanged: decoding is lossless, so re-encoding what it returns counts the same wire
+bytes as before.
+
+**The order matters, and a decode bolted on at the end would not have been enough.** Both
+parsers trim surrounding space, and JavaScript's `trim()` treats `U+00A0` as whitespace —
+which is also the second byte of `à` (`0xC3 0xA0`). Trimming the latin1 form therefore ate
+that byte, so a title *ending* in `à` lost its last character and left a lone `0xC3` that
+is not valid UTF-8 at all. `déjà` came back as `dÃ©jÃ`. The decode has to come first.
 
 ### 1 — the built server cannot start   [fixed]   severity: high
 Repro: `pnpm -C server build && pnpm -C server start`

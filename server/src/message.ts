@@ -65,16 +65,48 @@ export const MAX_TAG_BYTES = 64;
 /** What publish tells a client whose `X-Tags` is over either limit. */
 export const TAGS_RULE = `X-Tags must be at most ${MAX_TAGS} tags of at most ${MAX_TAG_BYTES} bytes each`;
 
+/** What publish tells a client whose metadata headers are not UTF-8. */
+export const TITLE_ENCODING_RULE = 'X-Title must be valid UTF-8';
+export const TAGS_ENCODING_RULE = 'X-Tags must be valid UTF-8';
+
 /**
- * How many bytes a header value took on the wire.
+ * Text headers are UTF-8 on the wire, undeclared: a client sends the bytes of the title
+ * it wants shown, and `curl -H "X-Title: Café"` from any modern shell already does. The
+ * alternative — RFC 2047 encoded words — would make every client, and every `curl` one
+ * liner, encode a title the server could just as well read. Anything else is refused
+ * rather than guessed at: a lone `0xE9` is `é` in latin1, half a character in UTF-8, and
+ * a server that picks for the client silently delivers the wrong title.
+ */
+const UTF8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+
+/**
+ * Recover the bytes a header arrived as, and read them as UTF-8.
  *
  * Node decodes header values as latin1 — one character per byte received — so a UTF-8
- * title arrives as one character for each byte the client sent. Measuring it back as
- * latin1 therefore counts those same bytes, where measuring it as UTF-8 would count
- * what its mojibake costs to re-encode, which is nothing the client ever sent.
+ * title arrives spelled as its own bytes, and is stored and streamed as mojibake unless
+ * it is decoded back. Re-encoding as latin1 recovers those bytes exactly, because every
+ * byte has a latin1 character and no other.
+ *
+ * Throws a `RangeError` naming `rule` if the bytes are not UTF-8. Decoding is therefore
+ * lossless, and `headerBytes` can count the result back to what the client sent.
+ */
+function decodeHeader(value: string, rule: string): string {
+  try {
+    return UTF8.decode(Buffer.from(value, 'latin1'));
+  } catch {
+    throw new RangeError(rule);
+  }
+}
+
+/**
+ * How many bytes a decoded header value took on the wire.
+ *
+ * `decodeHeader` reverses Node's latin1 decoding and refuses anything that was not
+ * UTF-8, so re-encoding what it returns yields the client's own bytes back, and counting
+ * those is counting the wire.
  */
 function headerBytes(value: string): number {
-  return Buffer.byteLength(value, 'latin1');
+  return Buffer.byteLength(value, 'utf8');
 }
 
 /**
@@ -175,14 +207,18 @@ export function parsePriority(raw: string | undefined): number {
 /**
  * Parse `X-Tags`: comma-separated, surrounding space ignored, empties dropped.
  *
- * Throws a `RangeError` naming the rule for too many tags, or for one that is too long.
- * Both are measured after the empties are dropped and the space is trimmed, so what is
- * bounded is what a subscriber will be sent.
+ * Throws a `RangeError` naming the rule for a value that is not UTF-8, for too many
+ * tags, or for one that is too long. The two bounds are measured after the empties are
+ * dropped and the space is trimmed, so what is bounded is what a subscriber will be sent.
  */
 export function parseTags(raw: string | undefined): string[] {
   if (raw === undefined) return [];
 
-  const tags = raw
+  // Decoded whole, before the split: a comma is one byte in UTF-8 and never part of
+  // another character, so the tags it separates are the same either way — but `trim`
+  // run on the undecoded value would strip `0xA0`, a byte that is a no-break space in
+  // latin1 and the tail of `à` in UTF-8.
+  const tags = decodeHeader(raw, TAGS_ENCODING_RULE)
     .split(',')
     .map((tag) => tag.trim())
     .filter((tag) => tag.length > 0);
@@ -196,15 +232,20 @@ export function parseTags(raw: string | undefined): string[] {
 /**
  * Parse `X-Title`. A blank title is the same as no title at all.
  *
- * Throws a `RangeError` naming the rule for an over-long one, rather than truncating:
- * half a title is not what the sender asked to be shown. The bound is on the value as
- * sent, so padding a long title with space does not buy it room.
+ * Throws a `RangeError` naming the rule for a value that is not UTF-8, or for an
+ * over-long one — rather than truncating, since half a title is not what the sender
+ * asked to be shown. The bound is on the value as sent, so padding a long title with
+ * space does not buy it room.
  */
 export function parseTitle(raw: string | undefined): string | null {
   if (raw === undefined) return null;
-  if (headerBytes(raw) > MAX_TITLE_BYTES) throw new RangeError(TITLE_RULE);
 
-  const trimmed = raw.trim();
+  // Decoded before it is measured, and before it is trimmed: the byte count is the same
+  // either way, but a title ending in `à` loses its last byte to `trim` otherwise.
+  const title = decodeHeader(raw, TITLE_ENCODING_RULE);
+  if (headerBytes(title) > MAX_TITLE_BYTES) throw new RangeError(TITLE_RULE);
+
+  const trimmed = title.trim();
   return trimmed.length > 0 ? trimmed : null;
 }
 
