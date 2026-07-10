@@ -1,6 +1,7 @@
 import { buildApp } from './app.js';
 import { loadEnvFile } from './env.js';
 import { buildLoggerOptions, parseLogLevel } from './logging.js';
+import { parsePort } from './port.js';
 import { parseRetentionHours } from './retention.js';
 import { installShutdownHandlers } from './shutdown.js';
 import { MessageStore } from './store.js';
@@ -18,7 +19,15 @@ try {
 
 // The server binds loopback by default; expose it through a TLS reverse proxy
 // rather than binding a public interface directly (see deploy/).
-const PORT = Number(process.env.PORT ?? 4500);
+let PORT: number;
+try {
+  PORT = parsePort(process.env.PORT);
+} catch (err) {
+  // Refuse to start rather than hand `listen` a NaN or an out-of-range port, which fails
+  // with an opaque stack trace only after the database has already been opened.
+  console.error((err as Error).message);
+  process.exit(1);
+}
 const HOST = process.env.HOST ?? '127.0.0.1';
 const DB_PATH = process.env.DB_PATH ?? './commlink.sqlite';
 

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { logLevelRule } from '../src/logging.js';
+import { PORT_RULE } from '../src/port.js';
 import { RETENTION_RULE } from '../src/retention.js';
 
 const execFileAsync = promisify(execFile);
@@ -81,6 +82,36 @@ describe('the server entrypoint refuses a bad config', () => {
     expect(outcome.stderr).toContain('RETENTION_HOURS:');
     expect(outcome.stderr).toContain(RETENTION_RULE);
     expect(outcome.stdout).toBe('');
+  });
+
+  it.each<[string, string]>([
+    ['a non-number Number would take as NaN', 'abc'],
+    ['a fraction listen refuses', '8080.5'],
+    ['a negative', '-1'],
+    ['a port past the 16-bit range', '65536'],
+    ['exponent notation Number would take', '1e3'],
+    ['hex Number would take', '0x10'],
+    ['whitespace that trims to nothing', '   '],
+  ])('exits non-zero naming the rule for a PORT that is %s', async (_case, value) => {
+    const outcome = await start({ PORT: value });
+
+    expect(outcome.status).not.toBe(0);
+    // The reason names PORT itself, so the operator learns both what is wrong and which
+    // setting to fix — not the ERR_SOCKET_BAD_PORT stack trace listen would otherwise throw
+    // only after the database had been opened.
+    expect(outcome.stderr).toContain(PORT_RULE);
+    expect(outcome.stdout).toBe('');
+  });
+
+  it('does not refuse a valid PORT for the port reason', async () => {
+    // A valid port must clear the port gate. Pairing it with a bad LOG_LEVEL makes the boot
+    // fail for that later reason instead, so the process still exits promptly to assert on —
+    // but if the port parser rejected a good value, this would fail on the wrong message.
+    const outcome = await start({ PORT: '8080', LOG_LEVEL: 'nonsense' });
+
+    expect(outcome.status).not.toBe(0);
+    expect(outcome.stderr).not.toContain(PORT_RULE);
+    expect(outcome.stderr).toContain(logLevelRule());
   });
 
   it('does not refuse a valid RETENTION_HOURS for the retention reason', async () => {

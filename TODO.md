@@ -106,6 +106,12 @@ The self-hostable pub/sub core.
       value; a missing file reads straight from the environment as before; a malformed one
       aborts the boot naming the line, rather than running on a default the operator meant
       to change. Comments are whole-line and a value may be quoted to keep spaces or a `#`.
+- [x] Validate `PORT` at startup the way `RETENTION_HOURS` and `LOG_LEVEL` are. A bad
+      value (`abc`, `8080.5`, `-1`, `65536`) used to be handed straight to `listen`, which
+      failed with an `ERR_SOCKET_BAD_PORT` stack trace that named no setting and only after
+      the database had already been opened. The server now refuses a `PORT` outside 0–65535
+      (0 still asks the OS for a free port) before any side effect, tagging the reason on
+      stderr so an operator learns which setting to fix.
 - [x] Lint and format: ESLint (typescript-eslint) and Prettier are configured, with a
       `pnpm lint` script (ESLint + `prettier --check`) and a `pnpm format` script. CI runs
       `pnpm -r lint`, and `CONTRIBUTING.md` points contributors at both.
