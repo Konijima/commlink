@@ -23,16 +23,13 @@ before the Android client is built against it.
 - [x] Keepalive every 45s: a ping frame on a WebSocket, a blank line on a `/json`
       stream. A subscriber that misses a ping is dropped, so a dead connection stops
       holding a subscription open.
+- [x] Handle a subscriber that stops reading. The server holds at most 1 MiB of queued
+      messages for any one connection and drops it past that, so a stalled client can
+      no longer grow the heap without bound.
 
 ## Server (v0.1)
 
 The self-hostable pub/sub core.
-
-### Publish & subscribe
-- [ ] Handle a subscriber that stops reading. Both subscribe routes write without
-      checking backpressure, so a stalled client makes the server buffer without bound.
-      Watch the socket's `bufferedAmount` (and `write()`'s return value on the NDJSON
-      stream), then drop the slowest consumers rather than growing the heap.
 
 ### Message cache & replay
 - [ ] Persist every message to SQLite.
