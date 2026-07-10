@@ -87,9 +87,12 @@ name is free to mint again, and the replacement is a new token with a new id —
 starts with a fresh [rate-limit](#rate-limit) budget rather than inheriting whatever the
 revoked one had spent.
 
-One caveat: **a subscriber already holding an open stream keeps it.** A token is checked
-when a connection is made, not for as long as it is held, so a revoked subscriber stops
-only when it next reconnects. Restart the server to disconnect one immediately.
+A subscriber already holding an open stream is cut off too, without a reconnect or a
+restart. Every keepalive interval (45s) the server re-checks each open subscriber's token
+against the database and drops one whose token has been revoked — a WebSocket is closed
+with `1008 "token revoked"` and a `/json` stream is ended — so a revoked subscriber stops
+within one interval of the revoke. Restart the server to disconnect one instantly rather
+than waiting the interval out.
 
 Publishers and `/json` subscribers send the token as a header:
 
