@@ -7,10 +7,12 @@ import Fastify, {
 import { registerAuth } from './auth.js';
 import { Broker } from './broker.js';
 import {
+  BODY_ENCODING_RULE,
   MAX_BODY_BYTES,
   MAX_TOPIC_LIST_LENGTH,
   bodyRule,
   createMessage,
+  decodeBody,
   headerValue,
   parsePriority,
   parseTags,
@@ -23,6 +25,13 @@ import { MessageStore } from './store.js';
 import { registerStreamRoute } from './stream.js';
 import { registerSubscribeRoute } from './subscribe.js';
 import { TokenStore } from './tokens.js';
+
+/**
+ * The Fastify error code the content-type parser tags a non-UTF-8 body with, so the
+ * error handler can answer it in the same `{ error }` shape as an over-long one rather
+ * than letting Fastify's default 500 shape through.
+ */
+const BODY_ENCODING_CODE = 'COMMLINK_ERR_BODY_ENCODING';
 
 export interface AppOptions {
   /** Injectable so tests can watch the fan-out the routes share. */
@@ -94,11 +103,16 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     routerOptions: { maxParamLength: MAX_TOPIC_LIST_LENGTH },
   });
 
-  // Report an over-long body in the shape every other refusal uses. Everything else is
-  // handed back to Fastify, whose default handler this one replaces.
+  // Report a body the transport refused in the shape every other refusal uses: an
+  // over-long one (413) and one that is not UTF-8 (400) are both rejected while the body
+  // is read, before any handler runs. Everything else is handed back to Fastify, whose
+  // default handler this one replaces.
   app.setErrorHandler<FastifyError>((error, _request, reply) => {
     if (error.code === 'FST_ERR_CTP_BODY_TOO_LARGE') {
       return reply.code(413).send({ error: bodyRule(maxBodyBytes) });
+    }
+    if (error.code === BODY_ENCODING_CODE) {
+      return reply.code(400).send({ error: BODY_ENCODING_RULE });
     }
     return reply.send(error);
   });
@@ -132,10 +146,20 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   // A message body is opaque text, whatever the sender labels it. Replacing the
   // built-in parsers keeps `curl -d hello` (which sends x-www-form-urlencoded)
   // from being rejected as an unsupported media type, and stops a JSON body from
-  // being reshaped into an object on its way to subscribers.
+  // being reshaped into an object on its way to subscribers. It arrives as the raw
+  // bytes the client sent and is decoded as UTF-8, so a body that is not UTF-8 is
+  // refused here — while it is read, before any handler — rather than silently
+  // delivered as U+FFFD replacements, the same rule `X-Title` keeps.
   app.removeAllContentTypeParsers();
-  app.addContentTypeParser('*', { parseAs: 'string' }, (_request, body, done) => {
-    done(null, body);
+  app.addContentTypeParser('*', { parseAs: 'buffer' }, (_request, body, done) => {
+    try {
+      done(null, decodeBody(body as Buffer));
+    } catch {
+      const error = new Error(BODY_ENCODING_RULE) as FastifyError;
+      error.code = BODY_ENCODING_CODE;
+      error.statusCode = 400;
+      done(error);
+    }
   });
 
   // Liveness probe: 200 with the process uptime in seconds.

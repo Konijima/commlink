@@ -55,6 +55,9 @@ export function bodyRule(maxBytes: number = MAX_BODY_BYTES): string {
   return `message body must be at most ${maxBytes} bytes`;
 }
 
+/** What publish tells a client whose message body is not UTF-8. */
+export const BODY_ENCODING_RULE = 'message body must be valid UTF-8';
+
 /**
  * The largest `X-Title` accepted, in bytes.
  *
@@ -105,6 +108,26 @@ function decodeHeader(value: string, rule: string): string {
     return UTF8.decode(Buffer.from(value, 'latin1'));
   } catch {
     throw new RangeError(rule);
+  }
+}
+
+/**
+ * Read a publish body from the bytes it arrived as.
+ *
+ * The body is the message text a subscriber is shown, and like `X-Title` it is UTF-8 on
+ * the wire — a client sends the bytes it wants delivered. Node's `Buffer#toString('utf8')`
+ * would map an invalid sequence to U+FFFD and hand on the replacement silently, the same
+ * corruption `decodeHeader` refuses for a title: the body is the message itself, so a
+ * server that mangles it delivers the wrong notification without saying so. The bytes are
+ * decoded strictly instead, and anything that is not UTF-8 is refused.
+ *
+ * Throws a `RangeError` naming {@link BODY_ENCODING_RULE} if the bytes are not UTF-8.
+ */
+export function decodeBody(body: Buffer): string {
+  try {
+    return UTF8.decode(body);
+  } catch {
+    throw new RangeError(BODY_ENCODING_RULE);
   }
 }
 
