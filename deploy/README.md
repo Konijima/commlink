@@ -47,9 +47,10 @@ DB_PATH=/path/to/state/commlink.sqlite node dist/cli/token-list.js
 DB_PATH=/path/to/state/commlink.sqlite node dist/cli/token-revoke.js pixel
 ```
 
-A revoked token is refused from the next request onward. A subscriber already holding an
-open stream keeps it until it reconnects; `systemctl --user restart
-commlink-server.service` cuts one off at once.
+A revoked token is refused from the next request onward, and a subscriber already holding
+an open stream is dropped automatically within one keepalive interval (45s) — no reconnect
+or restart needed. `systemctl --user restart commlink-server.service` cuts every connection
+off at once if you would rather not wait the interval out.
 
 ## TLS
 
