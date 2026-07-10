@@ -85,6 +85,10 @@ The self-hostable pub/sub core.
 - [ ] Cover who owns the message store: the app closes a store it created and leaves an
       injected one open. Nothing tests either half, and closing a database twice is a
       no-op, so a regression would pass the suite.
+- [ ] Cover the refusal to start on a malformed `RETENTION_HOURS`. The parser and the app
+      builder each reject one, but nothing runs the server as a process and asserts it
+      exits non-zero with the reason on stderr — which is the behaviour an operator with a
+      bad config actually meets.
 - [ ] Test on the Node.js versions the docs promise. The READMEs say Node 20+, CI runs
       Node 22 only.
 - [ ] `deploy/`: a systemd unit and a TLS reverse-proxy (Caddy) snippet. Both files
