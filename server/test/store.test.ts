@@ -127,6 +127,67 @@ describe('MessageStore', () => {
     expect(store.since(['mytopic'], 2000)).toEqual([first, second, third]);
   });
 
+  describe('prune', () => {
+    it('deletes messages published before the cutoff', () => {
+      const old = message({ timestamp: 1000 });
+      const recent = message({ timestamp: 3000 });
+
+      store.append(old);
+      store.append(recent);
+      store.prune(2000);
+
+      expect(store.since(['mytopic'], 0)).toEqual([recent]);
+    });
+
+    it('keeps a message published exactly at the cutoff', () => {
+      // `since()` replays from `timestamp >= t`, so anything it would still hand back
+      // must survive the sweep that runs at the same second.
+      const published = message({ timestamp: 2000 });
+
+      store.append(published);
+      store.prune(2000);
+
+      expect(store.since(['mytopic'], 0)).toEqual([published]);
+    });
+
+    it('reports how many messages it deleted', () => {
+      store.append(message({ timestamp: 1000 }));
+      store.append(message({ timestamp: 1500 }));
+      store.append(message({ timestamp: 3000 }));
+
+      expect(store.prune(2000)).toBe(2);
+    });
+
+    it('deletes nothing when every message is inside the window', () => {
+      store.append(message({ timestamp: 3000 }));
+
+      expect(store.prune(2000)).toBe(0);
+      expect(store.since(['mytopic'], 0)).toHaveLength(1);
+    });
+
+    it('deletes nothing from an empty database', () => {
+      expect(store.prune(2000)).toBe(0);
+    });
+
+    it('sweeps every topic, not just one', () => {
+      store.append(message({ topic: 'alerts', timestamp: 1000 }));
+      store.append(message({ topic: 'deploys', timestamp: 1000 }));
+
+      expect(store.prune(2000)).toBe(2);
+      expect(store.since(['alerts', 'deploys'], 0)).toEqual([]);
+    });
+
+    it('frees the id of a pruned message for reuse', () => {
+      // Ids are unique across the table; an expired one must not collide forever.
+      const published = message({ timestamp: 1000 });
+
+      store.append(published);
+      store.prune(2000);
+
+      expect(() => store.append(published)).not.toThrow();
+    });
+  });
+
   describe('on disk', () => {
     let directory: string;
     let path: string;

@@ -32,14 +32,14 @@ before the Android client is built against it.
       on both `/ws` and `/json`. The bound is inclusive to the second, so a reconnecting
       client can see one message twice and de-duplicates on `id`. A malformed `since` is
       rejected rather than ignored.
+- [x] Retention: messages expire after `RETENTION_HOURS` (72 by default), swept at startup
+      and hourly after. The window bounds both the database and how far `?since=` can
+      replay. A `RETENTION_HOURS` that is not a whole number of hours refuses to start,
+      rather than silently expiring nothing.
 
 ## Server (v0.1)
 
 The self-hostable pub/sub core.
-
-### Message cache & replay
-- [ ] Retention: 72h, cleaned by an hourly job. Until this lands the database grows
-      without bound, and `?since=` can replay arbitrarily far back.
 
 ### Auth & safety
 - [ ] Bearer-token auth on **both** publish and subscribe (`Authorization: Bearer …`,
@@ -52,9 +52,9 @@ The self-hostable pub/sub core.
 - [ ] Graceful shutdown on `SIGTERM`/`SIGINT`: stop accepting, end the open subscriber
       streams, then exit. Today the process is killed outright, so a restart drops
       subscribers without closing their connections.
-- [ ] Config via `.env`: `PORT`, `DB_PATH`, `RETENTION_HOURS`. Nothing reads a `.env`
-      file today — only `PORT`, `HOST` and `DB_PATH`, straight from the process
-      environment.
+- [ ] Config via `.env`: nothing reads a `.env` file today. `PORT`, `HOST`, `DB_PATH` and
+      `RETENTION_HOURS` are read straight from the process environment, so `.env.example`
+      cannot be copied to `.env` and picked up.
 - [ ] Lint and format: no linter or formatter is configured, so `CONTRIBUTING.md` cannot
       point contributors at one and CI checks only types and tests. Add ESLint and
       Prettier, a `lint` script, and a CI step that runs it.

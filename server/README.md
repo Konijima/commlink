@@ -4,8 +4,8 @@ The pub/sub push-notification server: Node.js + TypeScript, Fastify, WebSocket, 
 SQLite. It accepts published messages over HTTP and streams them to subscribed clients
 over WebSocket.
 
-> Early development. Publishing, both subscribe routes, the message cache and `?since=`
-> replay are live. Retention and auth are still being built — see
+> Early development. Publishing, both subscribe routes, the message cache, `?since=`
+> replay and retention are live. Auth is still being built — see
 > [`../TODO.md`](../TODO.md).
 
 ## Requirements
@@ -186,8 +186,18 @@ The cache is what lets a subscriber that was offline — or whose socket dropped
 up on what it missed: `?since=` on either subscribe route reads it back (see
 [Catching up](#catching-up)).
 
-Nothing is deleted yet, so the database grows without bound; retention is next on the
-roadmap.
+### Retention
+
+A cached message expires after `RETENTION_HOURS` (**72** by default). Expired messages
+are swept out of the database when the server starts and once an hour after that, so the
+file stays bounded by how much you publish in a window rather than growing forever.
+
+The window is also the limit on `?since=`: a subscriber that reconnects after longer
+than `RETENTION_HOURS` away has lost what it missed, and starts from what is left.
+Set the window to however long you expect a subscriber to be able to stay offline.
+
+The sweep runs at startup as well as hourly, so a server that was down while messages
+expired does not serve them on the way back up.
 
 ## Configuration
 
@@ -200,9 +210,10 @@ set the variables in the shell or in your service manager (see
 | `PORT`            | `4500`               | Port to listen on.                 | Read now   |
 | `HOST`            | `127.0.0.1`          | Interface to bind.                 | Read now   |
 | `DB_PATH`         | `./commlink.sqlite`  | SQLite database file.              | Read now   |
-| `RETENTION_HOURS` | `72`                 | How long cached messages are kept. | Not yet    |
+| `RETENTION_HOURS` | `72`                 | How long cached messages are kept. | Read now   |
 
-`RETENTION_HOURS` lands with retention; setting it today has no effect.
+`RETENTION_HOURS` must be a whole number of hours, at least `1`. The server refuses to
+start on anything else rather than run with a window that would never expire a message.
 
 The server binds loopback by default. To expose it, put it behind a TLS reverse proxy —
 see [`../deploy/`](../deploy/).

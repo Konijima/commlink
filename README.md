@@ -25,8 +25,8 @@ curl -d "Backup finished" https://your-server/backups
   a webhook.
 - **Reliable delivery.** Every message is stored server-side, and a subscriber that
   reconnects with `?since=<unix_ts>` is sent what it missed, so a flaky connection does
-  not lose a notification. Stored messages are not yet expired — retention is on the
-  roadmap.
+  not lose a notification. Messages are kept for 72 hours and then swept, so the
+  database stays bounded.
 
 ## How it works
 

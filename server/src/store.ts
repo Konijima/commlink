@@ -72,6 +72,7 @@ function toMessage(row: MessageRow): Message {
 export class MessageStore {
   readonly #db: Database.Database;
   readonly #append: Database.Statement<AppendParams>;
+  readonly #prune: Database.Statement<[cutoff: number]>;
 
   /**
    * Open (and create, if needed) the database at `path`. Pass {@link IN_MEMORY} for a
@@ -95,6 +96,8 @@ export class MessageStore {
       `INSERT INTO messages (id, topic, title, message, priority, tags, timestamp)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
+
+    this.#prune = this.#db.prepare(`DELETE FROM messages WHERE timestamp < ?`);
   }
 
   /** Store `message`. Throws if its id is already present. */
@@ -121,6 +124,8 @@ export class MessageStore {
    *
    * Ordering is by insertion, not by timestamp, for the same reason — messages sharing
    * a second still replay in the order they were published.
+   *
+   * Only what is still inside the retention window can come back; see {@link prune}.
    */
   since(topics: readonly string[], timestamp: number): Message[] {
     if (topics.length === 0) return [];
@@ -136,6 +141,18 @@ export class MessageStore {
       .all(...topics, timestamp) as MessageRow[];
 
     return rows.map(toMessage);
+  }
+
+  /**
+   * Delete every message published before `cutoff`, across all topics, and report how
+   * many were removed.
+   *
+   * The bound is exclusive where {@link since}'s is inclusive, so the two agree on the
+   * edge: a message stamped exactly `cutoff` is still replayable rather than swept a
+   * second early.
+   */
+  prune(cutoff: number): number {
+    return this.#prune.run(cutoff).changes;
   }
 
   close(): void {
