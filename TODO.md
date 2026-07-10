@@ -28,6 +28,10 @@ The self-hostable pub/sub core.
 ### Publish & subscribe
 - [ ] Keepalive: server ping every 45s; drop dead connections. An idle `/:topic/json`
       stream needs the same treatment, or a proxy will time it out.
+- [ ] Handle a subscriber that stops reading. Both subscribe routes write without
+      checking backpressure, so a stalled client makes the server buffer without bound.
+      Watch the socket's `bufferedAmount` (and `write()`'s return value on the NDJSON
+      stream), then drop the slowest consumers rather than growing the heap.
 
 ### Message cache & replay
 - [ ] Persist every message to SQLite.
@@ -45,7 +49,11 @@ The self-hostable pub/sub core.
 - [ ] Graceful shutdown on `SIGTERM`/`SIGINT`: stop accepting, end the open subscriber
       streams, then exit. Today the process is killed outright, so a restart drops
       subscribers without closing their connections.
-- [ ] Config via `.env`: `PORT`, `DB_PATH`, `RETENTION_HOURS`.
+- [ ] Config via `.env`: `PORT`, `DB_PATH`, `RETENTION_HOURS`. Nothing reads a `.env`
+      file today — only `PORT` and `HOST`, straight from the process environment.
+- [ ] Lint and format: no linter or formatter is configured, so `CONTRIBUTING.md` cannot
+      point contributors at one and CI checks only types and tests. Add ESLint and
+      Prettier, a `lint` script, and a CI step that runs it.
 - [ ] Structured logging with pino.
 - [ ] Test suite (vitest): publish→subscribe roundtrip, replay-since, auth rejection,
       rate limit.

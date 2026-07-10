@@ -42,6 +42,7 @@ small and atomic.
 ## Code style
 
 - TypeScript is strict; prefer explicit types at module boundaries.
-- Format with the repo's configured tooling before opening a PR.
-- No secrets in the repo — configuration comes from environment variables and a local
-  `.env` (see `server/.env.example`).
+- Match the surrounding style. A linter and formatter are not set up yet (see `TODO.md`),
+  so `pnpm typecheck` and `pnpm test` are what CI enforces.
+- No secrets in the repo — configuration comes from environment variables (see
+  `server/.env.example`).

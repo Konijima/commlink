@@ -23,8 +23,9 @@ curl -d "Backup finished" https://your-server/backups
   reverse proxy.
 - **Simple to publish.** Any HTTP client works: `curl`, a cron job, a shell script,
   a webhook.
-- **Reliable delivery.** Messages are cached server-side and replayed on reconnect, so
-  a flaky connection never loses a notification.
+- **Reliable delivery** *(in progress).* Messages will be cached server-side and replayed
+  on reconnect, so a flaky connection never loses a notification. Today the server fans
+  out to live subscribers only.
 
 ## How it works
 
@@ -37,8 +38,8 @@ publisher ──HTTP POST──►  commlink server  ──WebSocket──►  A
   priority, and tags.
 - **Subscribe:** the app holds a single multiplexed WebSocket for all its topics and
   turns each incoming message into a system notification.
-- **Never miss a message:** every message is stored and can be replayed since a given
-  timestamp when a client reconnects.
+- **Never miss a message** *(in progress)*: every message will be stored and can be
+  replayed since a given timestamp when a client reconnects.
 
 ## Components
 
