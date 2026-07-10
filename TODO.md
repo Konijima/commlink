@@ -87,9 +87,12 @@ The self-hostable pub/sub core.
       self-hosted server, which is the only way it runs today.
 
 ### Ops
-- [ ] Graceful shutdown on `SIGTERM`/`SIGINT`: stop accepting, end the open subscriber
-      streams, then exit. Today the process is killed outright, so a restart drops
-      subscribers without closing their connections.
+- [x] Graceful shutdown on `SIGTERM`/`SIGINT`: stop accepting, end the open subscriber
+      streams, then exit `0`. The signal now closes the server rather than killing the
+      process outright, so a WebSocket subscriber gets a close frame and a `/json` reader
+      gets its response ended — each learns to reconnect instead of discovering the drop
+      by its own timeout. A close that wedges is abandoned after 10s with a non-zero exit,
+      and a second signal mid-shutdown is ignored rather than restarting the close.
 - [ ] Config via `.env`: nothing reads a `.env` file today. `PORT`, `HOST`, `DB_PATH` and
       `RETENTION_HOURS` are read straight from the process environment, so `.env.example`
       cannot be copied to `.env` and picked up.
