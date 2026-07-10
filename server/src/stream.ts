@@ -1,6 +1,7 @@
 import type { ServerResponse } from 'node:http';
 import type { FastifyInstance } from 'fastify';
 import type { Broker } from './broker';
+import { KEEPALIVE_INTERVAL_MS, everyInterval } from './keepalive';
 import { parseTopicList } from './message';
 
 /**
@@ -15,13 +16,28 @@ import { parseTopicList } from './message';
  * live-only, and the response never completes on its own: the client reads until it
  * disconnects.
  */
-export function registerStreamRoute(app: FastifyInstance, broker: Broker): void {
+export function registerStreamRoute(
+  app: FastifyInstance,
+  broker: Broker,
+  intervalMs: number = KEEPALIVE_INTERVAL_MS,
+): void {
   // A streaming response is never idle, so the HTTP server would wait on it forever
   // while shutting down. End the open ones before the server stops accepting.
   const open = new Set<ServerResponse>();
 
   app.addHook('preClose', async () => {
     for (const response of open) response.end();
+  });
+
+  // Plain HTTP has no ping frame, so the keepalive is a blank line. NDJSON readers
+  // skip it, an intermediary counts it as traffic and holds the connection open, and
+  // writing it is what surfaces a peer that vanished without a FIN: the response
+  // errors, which detaches the subscriber below.
+  everyInterval(app, intervalMs, () => {
+    for (const response of open) {
+      if (response.writableEnded) continue;
+      response.write('\n');
+    }
   });
 
   app.get<{ Params: { topic: string } }>('/:topic/json', (request, reply) => {
@@ -53,10 +69,15 @@ export function registerStreamRoute(app: FastifyInstance, broker: Broker): void 
       response.write(`${JSON.stringify(message)}\n`);
     });
 
-    // Fires both when the client disconnects and when a shutdown ends the response.
-    response.on('close', () => {
+    const detach = () => {
       unsubscribe();
       open.delete(response);
-    });
+    };
+
+    // 'close' fires when the client disconnects and when a shutdown ends the response.
+    // 'error' fires when a write finds the connection gone — and a response stream with
+    // no error listener throws.
+    response.on('close', detach);
+    response.on('error', detach);
   });
 }
