@@ -1,0 +1,7 @@
+# Minimal TLS reverse proxy for commlink.
+# Replace push.example.com with your own domain. Caddy obtains and renews the
+# certificate automatically. WebSocket upgrades are proxied transparently.
+
+push.example.com {
+	reverse_proxy 127.0.0.1:4500
+}

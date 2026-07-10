@@ -1,0 +1,20 @@
+[Unit]
+Description=commlink push-notification server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adjust these to your checkout and environment.
+WorkingDirectory=%h/commlink/server
+ExecStart=/usr/bin/node dist/server.js
+Environment=NODE_ENV=production
+Environment=PORT=4500
+Environment=HOST=127.0.0.1
+# Or load a full environment file instead of the two lines above:
+# EnvironmentFile=%h/.config/commlink/server.env
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

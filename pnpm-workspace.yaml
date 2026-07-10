@@ -1,0 +1,7 @@
+packages:
+  - server
+
+# esbuild (used by vitest/tsx) ships prebuilt platform binaries; allow its
+# install script so pnpm does not warn/fail on ignored build scripts.
+allowBuilds:
+  esbuild: true

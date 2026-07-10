@@ -1,0 +1,17 @@
+{
+  "name": "commlink",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Self-hosted push notifications: a minimal pub/sub server and a native Android client.",
+  "license": "MIT",
+  "author": "Konijima",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@11.10.0",
+  "scripts": {
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "build": "pnpm -r build"
+  }
+}
