@@ -13,6 +13,8 @@
     "smoke": "node scripts/smoke.mjs",
     "test": "vitest run",
     "token:create": "tsx src/cli/token-create.ts",
+    "token:list": "tsx src/cli/token-list.ts",
+    "token:revoke": "tsx src/cli/token-revoke.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

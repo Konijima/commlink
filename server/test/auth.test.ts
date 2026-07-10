@@ -244,3 +244,104 @@ describe('bearer-token auth', () => {
     });
   });
 });
+
+describe('a revoked token', () => {
+  let app: FastifyInstance;
+  let broker: Broker;
+  let tokens: TokenStore;
+  let revoked: string;
+  let kept: string;
+  let wsBase: string;
+  let sockets: WebSocket[];
+
+  beforeEach(async () => {
+    broker = new Broker();
+    tokens = new TokenStore();
+    revoked = tokens.create('pixel');
+    kept = tokens.create('laptop');
+    app = buildApp({ broker, tokens });
+    sockets = [];
+    wsBase = (await app.listen({ port: 0, host: '127.0.0.1' })).replace(/^http/, 'ws');
+  });
+
+  afterEach(async () => {
+    for (const socket of sockets) socket.close();
+    await app.close();
+    tokens.close();
+  });
+
+  const publish = (as: string, payload = 'hello') =>
+    app.inject({
+      method: 'POST',
+      url: '/mytopic',
+      headers: { 'content-type': 'text/plain', ...bearer(as) },
+      payload,
+    });
+
+  function connect(path: string, headers: Record<string, string> = {}): WebSocket {
+    const socket = new WebSocket(`${wsBase}${path}`, { headers });
+    sockets.push(socket);
+    return socket;
+  }
+
+  it('is refused where it worked a moment ago', async () => {
+    expect((await publish(revoked)).statusCode).toBe(200);
+
+    expect(tokens.revoke('pixel')).toBe(true);
+
+    // Nothing caches the lookup, so the very next request already misses.
+    const res = await publish(revoked);
+    expect(res.statusCode).toBe(401);
+    expect((res.json() as { error: string }).error).toBe(AUTH_RULE);
+  });
+
+  it('can no longer open a stream', async () => {
+    tokens.revoke('pixel');
+    const res = await app.inject({ method: 'GET', url: '/mytopic/json', headers: bearer(revoked) });
+
+    expect(res.statusCode).toBe(401);
+    expect(broker.listenerCount('mytopic')).toBe(0);
+  });
+
+  it('can no longer upgrade a socket', async () => {
+    tokens.revoke('pixel');
+    const socket = connect('/mytopic/ws', bearer(revoked));
+
+    const status = await new Promise<number>((resolve, reject) => {
+      socket.once('unexpected-response', (_request, response) =>
+        resolve(response.statusCode ?? 0),
+      );
+      socket.once('open', () => reject(new Error('the upgrade was not refused')));
+      socket.once('error', reject);
+    });
+
+    expect(status).toBe(401);
+    expect(broker.listenerCount('mytopic')).toBe(0);
+  });
+
+  it('leaves every other token working', async () => {
+    tokens.revoke('pixel');
+
+    expect((await publish(kept)).statusCode).toBe(200);
+  });
+
+  it('keeps a stream that was already open, until the subscriber disconnects', async () => {
+    // A token is checked when a connection is made, not for as long as it is held. This
+    // is the documented consequence, pinned here so it stays a decision rather than an
+    // accident: an operator who must cut a live subscriber off restarts the server.
+    const socket = connect('/mytopic/ws', bearer(revoked));
+    await new Promise<void>((resolve, reject) => {
+      socket.once('open', () => resolve());
+      socket.once('error', reject);
+    });
+
+    tokens.revoke('pixel');
+
+    const frame = new Promise<string>((resolve) => {
+      socket.once('message', (data) => resolve(data.toString()));
+    });
+    expect((await publish(kept, 'still here')).statusCode).toBe(200);
+
+    expect((JSON.parse(await frame) as { message: string }).message).toBe('still here');
+  });
+});

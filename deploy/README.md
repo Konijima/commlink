@@ -39,6 +39,18 @@ DB_PATH=/path/to/state/commlink.sqlite node dist/cli/token-create.js pixel
 The token is printed once. Keep it out of shell history and version control — the
 server stores only its hash and cannot recover it.
 
+Two more commands manage what has been issued. Both take the same `DB_PATH`, and neither
+needs the server stopped:
+
+```bash
+DB_PATH=/path/to/state/commlink.sqlite node dist/cli/token-list.js
+DB_PATH=/path/to/state/commlink.sqlite node dist/cli/token-revoke.js pixel
+```
+
+A revoked token is refused from the next request onward. A subscriber already holding an
+open stream keeps it until it reconnects; `systemctl --user restart
+commlink-server.service` cuts one off at once.
+
 ## TLS
 
 Point any reverse proxy that terminates TLS at `http://127.0.0.1:4500`. The included

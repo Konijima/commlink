@@ -43,6 +43,12 @@ before the Android client is built against it.
       tokens authorizes nobody.
 - [x] `tokens` table in SQLite, storing only a SHA-256 of each token; a
       `pnpm token:create <name>` CLI mints them and prints each one once.
+- [x] Manage minted tokens without editing the database by hand: `pnpm token:list` shows
+      the id, name and minting time of each (never the token or its hash), and
+      `pnpm token:revoke <name>` deletes one. A revoked token is refused from the next
+      request onward, with no restart; revoking a name that was never minted is an error
+      rather than a no-op. The name is free to mint again, and the replacement gets a new
+      id, so it does not inherit the revoked token's spent rate-limit budget.
 - [x] Rate limit: 60 publishes per minute per token, over a sliding window, answered with
       `429` and a `Retry-After`. Every attempt is charged, including one the handler goes
       on to reject; a request that never authenticated is not. Subscribing is uncapped.
@@ -62,8 +68,10 @@ before the Android client is built against it.
 The self-hostable pub/sub core.
 
 ### Auth & safety
-- [ ] Manage minted tokens: list them, and revoke one without editing the database by
-      hand. Minting is all the CLI can do today.
+- [ ] Disconnect a subscriber whose token is revoked. A token is checked when a
+      connection is made, not while it is held, so a revoked subscriber keeps its open
+      stream until it reconnects. Restarting the server is the only way to cut one off
+      today, which is documented but blunt.
 - [ ] Decide whether the publish rate limit needs to outlive the process. It is counted
       in memory, so a restart hands every token a fresh budget, and two server processes
       sharing a database would each grant the full 60. Neither matters to a single
