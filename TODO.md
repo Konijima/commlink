@@ -43,18 +43,24 @@ before the Android client is built against it.
       tokens authorizes nobody.
 - [x] `tokens` table in SQLite, storing only a SHA-256 of each token; a
       `pnpm token:create <name>` CLI mints them and prints each one once.
+- [x] Rate limit: 60 publishes per minute per token, over a sliding window, answered with
+      `429` and a `Retry-After`. Every attempt is charged, including one the handler goes
+      on to reject; a request that never authenticated is not. Subscribing is uncapped.
 
 ## Server (v0.1)
 
 The self-hostable pub/sub core.
 
 ### Auth & safety
-- [ ] Rate limit: 60 requests/min per token on publish.
 - [ ] Reject payloads larger than 4 KB. Until this lands, the body of an unauthorized
       publish is still read before the token is checked, bounded only by the framework's
       1 MiB default.
 - [ ] Manage minted tokens: list them, and revoke one without editing the database by
       hand. Minting is all the CLI can do today.
+- [ ] Decide whether the publish rate limit needs to outlive the process. It is counted
+      in memory, so a restart hands every token a fresh budget, and two server processes
+      sharing a database would each grant the full 60. Neither matters to a single
+      self-hosted server, which is the only way it runs today.
 
 ### Ops
 - [ ] Graceful shutdown on `SIGTERM`/`SIGINT`: stop accepting, end the open subscriber
@@ -67,8 +73,8 @@ The self-hostable pub/sub core.
       point contributors at one and CI checks only types and tests. Add ESLint and
       Prettier, a `lint` script, and a CI step that runs it.
 - [ ] Structured logging with pino.
-- [ ] Test suite (vitest): publish→subscribe roundtrip, replay-since, auth rejection,
-      rate limit. All but the rate limit exist; that half arrives with the feature.
+- [x] Test suite (vitest): publish→subscribe roundtrip, replay-since, auth rejection,
+      rate limit.
 - [x] CI builds the server and boots the built output (`pnpm smoke`). It ran only
       `typecheck` and `test`, which is why `BUGS.md#1` — the built server cannot start —
       went unnoticed: both `pnpm dev` and the tests resolve imports the built output cannot.

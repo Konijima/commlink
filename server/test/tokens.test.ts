@@ -75,6 +75,40 @@ describe('TokenStore', () => {
     expect(tokens.verify(mintToken())).toBe(false);
   });
 
+  describe('identify', () => {
+    it('names the token it just minted', () => {
+      expect(tokens.identify(tokens.create('pixel'))).not.toBeNull();
+    });
+
+    it('gives each token a distinct name', () => {
+      const pixel = tokens.identify(tokens.create('pixel'));
+      const laptop = tokens.identify(tokens.create('laptop'));
+
+      expect(pixel).not.toBe(laptop);
+    });
+
+    it('gives one token the same name every time it is presented', () => {
+      const token = tokens.create('pixel');
+
+      expect(tokens.identify(token)).toBe(tokens.identify(token));
+    });
+
+    it.each([
+      ['a token that was never issued', mintToken()],
+      ['the empty string', ''],
+    ])('does not name %s', (_name, candidate) => {
+      tokens.create('pixel');
+
+      expect(tokens.identify(candidate)).toBeNull();
+    });
+
+    it('names no token that could be confused with none', () => {
+      // Ids come from `INTEGER PRIMARY KEY AUTOINCREMENT`, which starts at 1, so no
+      // real token is ever named by a value a caller might read as absent.
+      expect(tokens.identify(tokens.create('pixel'))).toBeGreaterThan(0);
+    });
+  });
+
   it.each(['', 'has space', 'has.dot', 'a'.repeat(65)])(
     'refuses to mint the name %j',
     (name) => {

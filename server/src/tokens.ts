@@ -81,7 +81,7 @@ export class TokenStore {
     this.#create = this.#db.prepare(
       `INSERT INTO tokens (name, hash, created_at) VALUES (?, ?, ?)`,
     );
-    this.#find = this.#db.prepare(`SELECT 1 FROM tokens WHERE hash = ?`);
+    this.#find = this.#db.prepare(`SELECT id FROM tokens WHERE hash = ?`);
   }
 
   /**
@@ -109,15 +109,24 @@ export class TokenStore {
   }
 
   /**
-   * Whether `token` is one this server issued.
+   * Which token `token` is, as the id of its row, or `null` if this server never issued
+   * it. The id names a token without being one — it is what a rate limit is counted
+   * against, and it can be logged where the token itself never could.
    *
    * The lookup is by hash, on a unique index. There is no secret-dependent comparison
    * to time: an attacker chooses the token, not the SHA-256 of it, so no amount of
    * measuring how long the index takes to miss tells them which token would hit.
    */
+  identify(token: string): number | null {
+    if (token.length === 0) return null;
+
+    const row = this.#find.get(hashToken(token)) as { id: number } | undefined;
+    return row?.id ?? null;
+  }
+
+  /** Whether `token` is one this server issued. */
   verify(token: string): boolean {
-    if (token.length === 0) return false;
-    return this.#find.get(hashToken(token)) !== undefined;
+    return this.identify(token) !== null;
   }
 
   close(): void {
