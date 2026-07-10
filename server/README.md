@@ -90,11 +90,11 @@ curl -H "Authorization: Bearer $TOKEN" -d "hello" http://127.0.0.1:4500/mytopic
 
 Metadata travels in optional headers:
 
-| Header       | Default | Meaning                                                              |
-| ------------ | ------- | -------------------------------------------------------------------- |
-| `X-Title`    | none    | Notification title, at most 256 bytes. Blank is treated as absent.   |
-| `X-Priority` | `3`     | Integer `1`–`5`. Anything else is rejected.                          |
-| `X-Tags`     | none    | Up to 16 comma-separated tags of 64 bytes each; space is ignored.    |
+| Header       | Default | Meaning                                                                    |
+| ------------ | ------- | -------------------------------------------------------------------------- |
+| `X-Title`    | none    | Notification title, UTF-8, at most 256 bytes. Blank is treated as absent.  |
+| `X-Priority` | `3`     | Integer `1`–`5`. Anything else is rejected.                                |
+| `X-Tags`     | none    | Up to 16 comma-separated UTF-8 tags of 64 bytes each; space is ignored.    |
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
@@ -120,6 +120,26 @@ curl -i -H "Authorization: Bearer $TOKEN" -H "X-Tags: $(printf 'a,%.0s' {1..17})
 ```
 
 Empty tags are dropped before the count, so `ci,,deploy` is two tags.
+
+### Metadata encoding
+
+`X-Title` and `X-Tags` are UTF-8. Send the bytes of the text you want shown — which is
+what `curl` already does with a UTF-8 terminal — and no encoding scheme wraps them:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" -H "X-Title: Café déjà vu" \
+     -d "hello" http://127.0.0.1:4500/mytopic
+# {"id":"…","title":"Café déjà vu","message":"hello",…}
+```
+
+Bytes that are not UTF-8 are rejected with `400 {"error":"X-Title must be valid UTF-8"}`
+(and the matching message for `X-Tags`), rather than delivered as whatever they happen to
+spell in some other encoding. A title encoded latin1 — where `é` is the single byte
+`0xE9` — is refused, because that same byte begins a character in UTF-8 and finishes
+none: a server that guessed would quietly deliver the wrong title.
+
+The size limits above are unaffected: they count the bytes that arrived, so a 256-byte
+title is 256 ASCII characters, or 128 accented ones.
 
 ### Body size
 
