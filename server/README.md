@@ -391,7 +391,9 @@ subscribe token passed as `?auth=<token>` is redacted from the request line, so 
 never reaches the log — the only place it could, since it rides in the URL.
 
 The server binds loopback by default. To expose it, put it behind a TLS reverse proxy —
-see [`../deploy/`](../deploy/).
+see [`../deploy/`](../deploy/) — or set `HOST` to a specific address on a trusted network.
+A blank `HOST` refuses to start rather than fall through to binding every interface, which
+is how an empty value would otherwise reach `listen`.
 
 ## API
 

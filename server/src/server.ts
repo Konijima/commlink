@@ -1,5 +1,6 @@
 import { buildApp } from './app.js';
 import { loadEnvFile } from './env.js';
+import { parseHost } from './host.js';
 import { buildLoggerOptions, parseLogLevel } from './logging.js';
 import { parsePort } from './port.js';
 import { parseRetentionHours } from './retention.js';
@@ -28,7 +29,15 @@ try {
   console.error((err as Error).message);
   process.exit(1);
 }
-const HOST = process.env.HOST ?? '127.0.0.1';
+let HOST: string;
+try {
+  HOST = parseHost(process.env.HOST);
+} catch (err) {
+  // Refuse to start rather than hand `listen` a blank host, which it reads as "every
+  // interface" — silently turning the loopback default into a public bind.
+  console.error((err as Error).message);
+  process.exit(1);
+}
 const DB_PATH = process.env.DB_PATH ?? './commlink.sqlite';
 
 let retentionHours: number;
