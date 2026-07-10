@@ -155,9 +155,20 @@ export function parseTopicList(raw: string): string[] {
 }
 
 /**
- * Node exposes a repeated header — and Fastify a repeated query parameter — as an
- * array. Take the first value rather than joining, so a duplicated `X-Title` cannot
- * smuggle a comma-joined title through.
+ * The single value of something a client may have sent more than once.
+ *
+ * Fastify hands over a repeated query parameter — `?since=1&since=2` — as an array, and
+ * this takes the first: a client that asked twice gets the answer to its first question
+ * rather than a `400` about `"1,2"`.
+ *
+ * A repeated *header* never arrives as an array here. Node folds one before a route sees
+ * it, and which way depends on the header: `Authorization` and `Content-Type` keep the
+ * first and discard the rest, while a header of our own — `X-Title`, `X-Tags`,
+ * `X-Priority` — is joined with `", "`. (Only `Set-Cookie`, which a request has no
+ * business carrying, becomes an array.) So a duplicated `X-Title` is delivered as
+ * `"alpha, beta"`, and it is that joined value the size limit is measured against — a
+ * repeat buys no extra room. A duplicated `X-Priority` folds into `"1, 5"`, which is not
+ * an integer, and is refused. `test/repeatedheaders.test.ts` pins all of it.
  */
 export function headerValue(raw: string | string[] | undefined): string | undefined {
   if (Array.isArray(raw)) return raw[0];
