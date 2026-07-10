@@ -20,9 +20,9 @@ jobs:
       # Run every version to completion; one failure should not mask another.
       fail-fast: false
       matrix:
-        # The docs promise Node.js 20+, so test the floor, the previous LTS,
-        # and the current LTS rather than a single version.
-        node: [20, 22, 24]
+        # The docs promise Node.js 22+ (the floor pnpm itself requires), so test
+        # that floor and the current LTS rather than a single version.
+        node: [22, 24]
 
     steps:
       - uses: actions/checkout@v4

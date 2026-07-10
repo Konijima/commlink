@@ -11,7 +11,7 @@ over WebSocket.
 
 ## Requirements
 
-- Node.js 20+
+- Node.js 22+
 - [pnpm](https://pnpm.io)
 
 The SQLite driver ships prebuilt binaries for common platforms. On anything else it is
