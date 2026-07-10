@@ -5,9 +5,9 @@ SQLite. It accepts published messages over HTTP and streams them to subscribed c
 over WebSocket.
 
 > Early development. Publishing, both subscribe routes, the message cache, `?since=`
-> replay, retention, bearer-token auth, publish rate limiting and the payload and
-> metadata size caps are live. Graceful shutdown, `.env` loading and structured logging
-> are still to come — see [`../TODO.md`](../TODO.md).
+> replay, retention, bearer-token auth, publish rate limiting, the payload and metadata
+> size caps, graceful shutdown, `.env` loading and structured logging are live. The
+> Android client is next — see [`../TODO.md`](../TODO.md).
 
 ## Requirements
 
@@ -369,19 +369,26 @@ expired does not serve them on the way back up.
 
 ## Configuration
 
-Configuration comes from the process environment. A `.env` file is **not** loaded yet, so
-set the variables in the shell or in your service manager (see
-[`../deploy/`](../deploy/)); [`.env.example`](./.env.example) previews the full set.
+Configuration comes from the process environment. On start the server also loads a `.env`
+file from its working directory, so [`.env.example`](./.env.example) can be copied to
+`.env` and picked up; a real environment variable still wins, so a service manager (see
+[`../deploy/`](../deploy/)) or a one-off `PORT=… pnpm start` overrides a file value.
 
-| Variable          | Default             | Meaning                            | Status   |
-| ----------------- | ------------------- | ---------------------------------- | -------- |
-| `PORT`            | `4500`              | Port to listen on.                 | Read now |
-| `HOST`            | `127.0.0.1`         | Interface to bind.                 | Read now |
-| `DB_PATH`         | `./commlink.sqlite` | SQLite database: messages, tokens. | Read now |
-| `RETENTION_HOURS` | `72`                | How long cached messages are kept. | Read now |
+| Variable          | Default             | Meaning                                      |
+| ----------------- | ------------------- | -------------------------------------------- |
+| `PORT`            | `4500`              | Port to listen on.                           |
+| `HOST`            | `127.0.0.1`         | Interface to bind.                           |
+| `DB_PATH`         | `./commlink.sqlite` | SQLite database: messages, tokens.           |
+| `RETENTION_HOURS` | `72`                | How long cached messages are kept, in hours. |
+| `LOG_LEVEL`       | `info`              | Log verbosity, or `silent` to turn it off.   |
 
 `RETENTION_HOURS` must be a whole number of hours, at least `1`. The server refuses to
 start on anything else rather than run with a window that would never expire a message.
+
+`LOG_LEVEL` is one of `trace`, `debug`, `info`, `warn`, `error`, `fatal`, or `silent`, and
+an unknown value refuses to start the same way. Logs are structured JSON on stdout. A
+subscribe token passed as `?auth=<token>` is redacted from the request line, so a token
+never reaches the log — the only place it could, since it rides in the URL.
 
 The server binds loopback by default. To expose it, put it behind a TLS reverse proxy —
 see [`../deploy/`](../deploy/).

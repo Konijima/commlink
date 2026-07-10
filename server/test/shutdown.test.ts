@@ -133,7 +133,8 @@ function waitForListening(child: ChildProcess): Promise<string> {
     let out = '';
     const onData = (chunk: Buffer): void => {
       out += chunk.toString();
-      const match = out.match(/listening on (http:\/\/\S+)/);
+      // The line is JSON now (pino), so stop the address at the closing quote.
+      const match = out.match(/listening on (http:\/\/[^"\s]+)/);
       if (match) {
         child.stdout?.off('data', onData);
         resolve(match[1]);

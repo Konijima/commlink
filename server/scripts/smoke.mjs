@@ -20,8 +20,11 @@ const SERVER_DIR = fileURLToPath(new URL('..', import.meta.url));
 const ENTRYPOINT = join(SERVER_DIR, 'dist', 'server.js');
 const BOOT_TIMEOUT_MS = 15_000;
 
-/** The line `server.ts` prints once it is listening, e.g. `… on http://127.0.0.1:4500`. */
-const LISTENING = /listening on (\S+)/;
+/**
+ * The line `server.ts` logs once it is listening, e.g. `… on http://127.0.0.1:4500`.
+ * It is a field in a JSON log line now, so the address stops at the closing quote.
+ */
+const LISTENING = /listening on (http:\/\/[^"\s]+)/;
 
 /** Set once the server is spawned, so a later failure can still reap it. */
 let server;
