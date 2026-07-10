@@ -11,8 +11,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify:
-    name: verify (node ${{ matrix.node }})
+  test:
+    name: test (node ${{ matrix.node }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -53,3 +53,18 @@ jobs:
       # whether the built server actually starts.
       - name: Boot the built server
         run: pnpm -C server smoke
+
+  # A single, matrix-independent status for branch protection to require. Its
+  # name stays "verify" no matter how many Node versions the matrix grows to, so
+  # the required check never has to be renamed when a version is added or dropped.
+  verify:
+    name: verify
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every test leg passed
+        if: ${{ needs.test.result != 'success' }}
+        run: |
+          echo "A test leg did not pass (result: ${{ needs.test.result }})."
+          exit 1

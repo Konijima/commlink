@@ -139,7 +139,9 @@ The self-hostable pub/sub core.
       the docs promised a floor the toolchain cannot meet: the pinned pnpm refuses to run on
       anything below Node 22.13, so `pnpm install` fails outright on Node 20 and the "Node 20+"
       requirement was never true. Corrected the floor to Node 22 in the READMEs, `CONTRIBUTING`
-      and `engines`; the matrix pins 22 (the real floor) and 24 (the current LTS).
+      and `engines`; the matrix pins 22 (the real floor) and 24 (the current LTS). A single
+      matrix-independent `verify` job gates on all legs, so branch protection keeps one stable
+      required check as versions come and go.
 - [ ] `deploy/`: a systemd unit and a TLS reverse-proxy (Caddy) snippet. Both files
       exist and the built server now starts (`BUGS.md#1`), but the unit stays unchecked
       until it has been run end-to-end.
