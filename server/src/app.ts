@@ -1,3 +1,4 @@
+import fastifyWebsocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { Broker } from './broker';
 import {
@@ -8,9 +9,10 @@ import {
   parseTags,
   parseTitle,
 } from './message';
+import { registerSubscribeRoute } from './subscribe';
 
 export interface AppOptions {
-  /** Injectable so tests (and, later, the WebSocket route) share one instance. */
+  /** Injectable so tests can watch the fan-out the routes share. */
   broker?: Broker;
 }
 
@@ -75,6 +77,13 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     broker.publish(message);
 
     return reply.code(200).send(message);
+  });
+
+  // The subscribe route lives inside a plugin scope so that it is registered after
+  // `@fastify/websocket` has loaded and can claim it as an upgrade route.
+  app.register(fastifyWebsocket);
+  app.register(async (scope) => {
+    registerSubscribeRoute(scope, broker);
   });
 
   return app;

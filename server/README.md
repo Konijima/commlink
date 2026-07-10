@@ -4,8 +4,8 @@ The pub/sub push-notification server: Node.js + TypeScript, Fastify, WebSocket, 
 SQLite. It accepts published messages over HTTP and streams them to subscribed clients
 over WebSocket, caching everything so nothing is lost across reconnects.
 
-> Early development. Publishing is live; subscribers, the message cache and auth are
-> being built — see [`../TODO.md`](../TODO.md).
+> Early development. Publishing and WebSocket subscribe are live; the message cache
+> and auth are being built — see [`../TODO.md`](../TODO.md).
 
 ## Requirements
 
@@ -52,6 +52,29 @@ curl -H "X-Title: Deploy finished" -H "X-Priority: 5" -H "X-Tags: ci,deploy" \
 Topic names are 1–64 characters of `A-Z`, `a-z`, `0-9`, `-` or `_`. A message needs a
 body or a title; an empty request with neither is rejected with `400`.
 
+## Subscribing
+
+`GET /:topic/ws` upgrades to a WebSocket and pushes one JSON frame per message
+published to that topic, for as long as the socket stays open:
+
+```json
+{
+  "id": "1c2bada3-ff00-4cd5-8a4e-24d77b408fd1",
+  "topic": "mytopic",
+  "title": "Deploy finished",
+  "message": "shipped",
+  "priority": 5,
+  "tags": ["ci", "deploy"],
+  "timestamp": 1700000000
+}
+```
+
+Subscribers are live-only: messages published while no socket was open are not
+replayed on connect. Caching and `?since=` replay are on the roadmap.
+
+Subscribing to a name that is not a valid topic closes the socket with code `1008`
+and the reason `invalid topic`.
+
 ## Configuration
 
 Configuration comes from the environment (a local `.env` is loaded in development; see
@@ -73,8 +96,9 @@ see [`../deploy/`](../deploy/).
 | ------ | ------------------------ | -------------------------------------------------- |
 | `GET`  | `/healthz`               | Liveness probe (200 + uptime). **Available now.**  |
 | `POST` | `/:topic`                | Publish a message to a topic. **Available now.**   |
-| `GET`  | `/:topic/ws`             | Subscribe over WebSocket (multiplexed, `,`-joined).|
+| `GET`  | `/:topic/ws`             | Subscribe over WebSocket. **Available now.**       |
 | `GET`  | `/:topic/json`           | HTTP long-poll / SSE fallback.                     |
 
-Published messages currently fan out to live subscribers only; they are not yet cached
-or replayed, and neither endpoint requires a bearer token yet. Both are on the roadmap.
+Subscribing to several topics over one socket (`/:topic1,topic2/ws`) is on the roadmap,
+as is `/:topic/json`. Published messages currently fan out to live subscribers only;
+they are not yet cached or replayed, and no endpoint requires a bearer token yet.
