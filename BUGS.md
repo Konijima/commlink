@@ -13,6 +13,24 @@ Notes: <cause, workaround, or fix once known>
 
 ---
 
+### 3 — a reserved topic is refused with the wrong reason   [open]   severity: low
+Repro: subscribe to the one topic name the server keeps for itself.
+
+```
+curl -i -H "Authorization: Bearer $TOKEN" http://127.0.0.1:4500/healthz/json
+HTTP/1.1 400 Bad Request
+{"error":"topic must be 1-64 characters of A-Z, a-z, 0-9, hyphen or underscore"}
+```
+
+Notes: `healthz` *is* 1–64 characters of that alphabet, so the message describes a rule the
+request did not break. It is refused because the server serves `/healthz` itself and a topic
+by that name would collide with it — which is a fair refusal, and one the client is never
+told about. Any name added to the reserved set later inherits the same confusion.
+
+The fix is a distinct message for a reserved name, not a wider alphabet. Low severity: one
+name, and only a client that picked it. Worth doing when the refusal messages are next
+touched.
+
 ### 2 — a non-ASCII title is stored and delivered as mojibake   [fixed]   severity: medium
 Repro: publish a title with an accent, then read the message back.
 
