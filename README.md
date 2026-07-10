@@ -59,10 +59,11 @@ pnpm test          # run the test suite
 pnpm dev           # start the server on http://127.0.0.1:4500
 ```
 
-Check it is alive:
+Check it is alive, then publish a message:
 
 ```bash
 curl http://127.0.0.1:4500/healthz
+curl -d "hello" http://127.0.0.1:4500/mytopic
 ```
 
 See [`server/README.md`](./server/README.md) for configuration and the full API, and
