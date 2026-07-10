@@ -93,9 +93,12 @@ The self-hostable pub/sub core.
       gets its response ended — each learns to reconnect instead of discovering the drop
       by its own timeout. A close that wedges is abandoned after 10s with a non-zero exit,
       and a second signal mid-shutdown is ignored rather than restarting the close.
-- [ ] Config via `.env`: nothing reads a `.env` file today. `PORT`, `HOST`, `DB_PATH` and
-      `RETENTION_HOURS` are read straight from the process environment, so `.env.example`
-      cannot be copied to `.env` and picked up.
+- [x] Config via `.env`: the server loads a `.env` from its working directory on start, so
+      `.env.example` can be copied to `.env` and picked up. A real environment variable
+      still wins, so a service manager or a one-off `PORT=… pnpm start` overrides a file
+      value; a missing file reads straight from the environment as before; a malformed one
+      aborts the boot naming the line, rather than running on a default the operator meant
+      to change. Comments are whole-line and a value may be quoted to keep spaces or a `#`.
 - [ ] Lint and format: no linter or formatter is configured, so `CONTRIBUTING.md` cannot
       point contributors at one and CI checks only types and tests. Add ESLint and
       Prettier, a `lint` script, and a CI step that runs it.

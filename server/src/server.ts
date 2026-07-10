@@ -1,8 +1,19 @@
 import { buildApp } from './app.js';
+import { loadEnvFile } from './env.js';
 import { parseRetentionHours } from './retention.js';
 import { installShutdownHandlers } from './shutdown.js';
 import { MessageStore } from './store.js';
 import { TokenStore } from './tokens.js';
+
+// Load a `.env` from the working directory before anything reads the environment, so a
+// copied `.env.example` is picked up. A real environment variable still wins; a missing
+// file is fine; a malformed one aborts, since it is config the operator meant to apply.
+try {
+  loadEnvFile();
+} catch (err) {
+  console.error((err as Error).message);
+  process.exit(1);
+}
 
 // The server binds loopback by default; expose it through a TLS reverse proxy
 // rather than binding a public interface directly (see deploy/).
