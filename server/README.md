@@ -5,8 +5,8 @@ SQLite. It accepts published messages over HTTP and streams them to subscribed c
 over WebSocket.
 
 > Early development. Publishing, both subscribe routes, the message cache, `?since=`
-> replay, retention and bearer-token auth are live. Rate limiting and a payload size
-> cap are still being built — see [`../TODO.md`](../TODO.md).
+> replay, retention, bearer-token auth and publish rate limiting are live. A payload
+> size cap is still being built — see [`../TODO.md`](../TODO.md).
 
 ## Requirements
 
@@ -104,6 +104,31 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 Topic names are 1–64 characters of `A-Z`, `a-z`, `0-9`, `-` or `_`. A message needs a
 body or a title; an empty request with neither is rejected with `400`.
+
+### Rate limit
+
+A token may publish **60 times a minute**. The 61st is answered with `429` and a
+`Retry-After` giving the whole seconds until a slot frees:
+
+```bash
+curl -i -H "Authorization: Bearer $TOKEN" -d "hello" http://127.0.0.1:4500/mytopic
+# HTTP/1.1 429 Too Many Requests
+# retry-after: 42
+# {"error":"publish rate limit exceeded"}
+```
+
+The window slides, so the limit is 60 publishes in any 60 seconds rather than 60 per
+clock minute — a client cannot spend its budget at the end of one minute and again at
+the start of the next.
+
+Every attempt is charged, including one the server goes on to reject with `400`: a
+publisher looping on a malformed request is exactly the flood the limit exists to stop.
+A request that fails to authenticate is not charged, because it named no token to
+charge. Each token has its own budget, so a noisy publisher cannot spend a quiet one's.
+
+Subscribing is not limited. A subscriber holds one long-lived connection, and the
+reconnect it makes after a dropped one is the request it can least afford to have
+refused.
 
 ## Subscribing
 
@@ -274,4 +299,5 @@ see [`../deploy/`](../deploy/).
 All four are available now. Both subscribe routes take one topic or a comma-separated
 list of them, and both accept `?since=<unix_ts>` to replay the cache before streaming
 live messages. "header" is `Authorization: Bearer <token>`; see
-[Authentication](#authentication).
+[Authentication](#authentication). Publishing is capped at 60 requests a minute per
+token (see [Rate limit](#rate-limit)); the other three routes are uncapped.

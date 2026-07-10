@@ -2,6 +2,16 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { headerValue } from './message.js';
 import type { TokenStore } from './tokens.js';
 
+declare module 'fastify' {
+  interface FastifyRequest {
+    /**
+     * Which token authenticated this request, as {@link TokenStore.identify} numbers
+     * them. `undefined` on the public routes, which authenticate nobody.
+     */
+    tokenId: number | undefined;
+  }
+}
+
 /**
  * Routes served without a token. A liveness probe runs where a secret should not have
  * to: a service manager, a uptime checker, a container orchestrator.
@@ -58,13 +68,22 @@ export function presentedToken(request: FastifyRequest): string | null {
  *
  * Missing, malformed and simply wrong tokens all hear the same `401`. Which of the
  * three it was is not the server's to tell.
+ *
+ * A request that gets through carries the id of the token it presented, which is how a
+ * later hook charges the request to whoever made it.
  */
 export function registerAuth(app: FastifyInstance, tokens: TokenStore): void {
+  app.decorateRequest('tokenId', undefined);
+
   app.addHook('preValidation', async (request, reply) => {
     if (PUBLIC_ROUTES.has(request.routeOptions.url ?? '')) return;
 
     const token = presentedToken(request);
-    if (token !== null && tokens.verify(token)) return;
+    const tokenId = token === null ? null : tokens.identify(token);
+    if (tokenId !== null) {
+      request.tokenId = tokenId;
+      return;
+    }
 
     reply.code(401).header('www-authenticate', AUTH_CHALLENGE).send({ error: AUTH_RULE });
     return reply;

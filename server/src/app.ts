@@ -12,6 +12,7 @@ import {
   parseTags,
   parseTitle,
 } from './message.js';
+import { RateLimiter, publishRateLimit } from './ratelimit.js';
 import { registerRetention } from './retention.js';
 import { MessageStore } from './store.js';
 import { registerStreamRoute } from './stream.js';
@@ -45,6 +46,11 @@ export interface AppOptions {
    * backpressure tests, which cannot stall a real socket by a megabyte quickly.
    */
   maxBufferedBytes?: number;
+  /**
+   * How many publishes one token may make per minute. Defaults to 60. Lowered by the
+   * rate-limit tests, which would otherwise have to publish 60 times to reach the cap.
+   */
+  publishRateLimit?: number;
 }
 
 /**
@@ -103,45 +109,53 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   });
 
   // Publish to a topic. The body is the message text; `X-Title`, `X-Priority`
-  // and `X-Tags` carry the metadata.
-  app.post<{ Params: { topic: string } }>('/:topic', async (request, reply) => {
-    const { topic } = request.params;
+  // and `X-Tags` carry the metadata. Every attempt costs the publishing token one of
+  // its slots, including one the handler goes on to reject: a client hammering the
+  // server with malformed publishes is the case the limit is for.
+  const limiter = new RateLimiter(options.publishRateLimit);
 
-    if (!isValidTopic(topic)) {
-      return reply.code(400).send({ error: TOPIC_RULE });
-    }
+  app.post<{ Params: { topic: string } }>(
+    '/:topic',
+    { preHandler: publishRateLimit(limiter) },
+    async (request, reply) => {
+      const { topic } = request.params;
 
-    let priority: number;
-    try {
-      priority = parsePriority(headerValue(request.headers['x-priority']));
-    } catch (error) {
-      return reply.code(400).send({ error: (error as Error).message });
-    }
+      if (!isValidTopic(topic)) {
+        return reply.code(400).send({ error: TOPIC_RULE });
+      }
 
-    const title = parseTitle(headerValue(request.headers['x-title']));
-    const text = typeof request.body === 'string' ? request.body : '';
+      let priority: number;
+      try {
+        priority = parsePriority(headerValue(request.headers['x-priority']));
+      } catch (error) {
+        return reply.code(400).send({ error: (error as Error).message });
+      }
 
-    // A notification with neither body nor title would show up blank.
-    if (text.length === 0 && title === null) {
-      return reply.code(400).send({ error: 'message body or X-Title is required' });
-    }
+      const title = parseTitle(headerValue(request.headers['x-title']));
+      const text = typeof request.body === 'string' ? request.body : '';
 
-    const message = createMessage({
-      topic,
-      message: text,
-      title,
-      priority,
-      tags: parseTags(headerValue(request.headers['x-tags'])),
-    });
+      // A notification with neither body nor title would show up blank.
+      if (text.length === 0 && title === null) {
+        return reply.code(400).send({ error: 'message body or X-Title is required' });
+      }
 
-    // Store before fanning out. A message a live subscriber has already seen must
-    // also be one a reconnecting subscriber can replay, and a write that fails should
-    // fail the publish rather than deliver a message that was never recorded.
-    store.append(message);
-    broker.publish(message);
+      const message = createMessage({
+        topic,
+        message: text,
+        title,
+        priority,
+        tags: parseTags(headerValue(request.headers['x-tags'])),
+      });
 
-    return reply.code(200).send(message);
-  });
+      // Store before fanning out. A message a live subscriber has already seen must
+      // also be one a reconnecting subscriber can replay, and a write that fails should
+      // fail the publish rather than deliver a message that was never recorded.
+      store.append(message);
+      broker.publish(message);
+
+      return reply.code(200).send(message);
+    },
+  );
 
   registerStreamRoute(app, broker, store, subscriberOptions);
 
