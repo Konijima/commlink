@@ -414,6 +414,12 @@ see [`../deploy/`](../deploy/) — or set `HOST` to a specific address on a trus
 A blank `HOST` refuses to start rather than fall through to binding every interface, which
 is how an empty value would otherwise reach `listen`.
 
+`DB_PATH` may be a file path or the literal `:memory:` for a deliberately ephemeral server.
+A blank value refuses to start: SQLite opens an empty filename as a private temporary
+database that is deleted on close — and the messages and tokens hold separate connections,
+so a blank path would silently give each its own throwaway database, persisting nothing and
+authorizing nobody.
+
 ## API
 
 | Method | Path            | Auth             | Purpose                        |
