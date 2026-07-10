@@ -4,14 +4,17 @@ The pub/sub push-notification server: Node.js + TypeScript, Fastify, WebSocket, 
 SQLite. It accepts published messages over HTTP and streams them to subscribed clients
 over WebSocket.
 
-> Early development. Publishing and both subscribe routes are live; the message cache
-> that will make delivery survive reconnects, and auth, are still being built — see
-> [`../TODO.md`](../TODO.md).
+> Early development. Publishing, both subscribe routes and the message cache are live.
+> Replaying the cache to a reconnecting subscriber, and auth, are still being built —
+> see [`../TODO.md`](../TODO.md).
 
 ## Requirements
 
 - Node.js 20+
 - [pnpm](https://pnpm.io)
+
+The SQLite driver ships prebuilt binaries for common platforms. On anything else it is
+compiled during install, which needs a C++ toolchain.
 
 ## Development
 
@@ -70,8 +73,8 @@ published to that topic, for as long as the socket stays open:
 }
 ```
 
-Subscribers are live-only: messages published while no socket was open are not
-replayed on connect. Caching and `?since=` replay are on the roadmap.
+Subscribers are live-only: every message is stored (see [Message cache](#message-cache)),
+but nothing is replayed on connect yet. `?since=` replay is next on the roadmap.
 
 Subscribing to a name that is not a valid topic closes the socket with code `1008`;
 the close reason says which rule the request broke.
@@ -139,6 +142,22 @@ dropped subscriber sees its WebSocket or stream close, and is free to reconnect.
 Reading promptly is all a client has to do to stay under the limit: the queue drains
 between messages and only a stalled connection ever accumulates.
 
+## Message cache
+
+Every accepted message is written to SQLite before it is handed to live subscribers, so
+a message the server answered `200` for is one that outlives the process. The database
+is the file named by `DB_PATH`, created on first run; a message rejected with `400` is
+never stored.
+
+The cache is what will let a subscriber that was offline — or whose socket dropped —
+catch up on what it missed. The `?since=` parameter that exposes it on the subscribe
+routes is not implemented yet, so today the cache is written but not read back. Nothing
+is deleted yet either; retention lands with it.
+
+Timestamps resolve to the whole second, so replay will be inclusive of the second a
+client last saw and messages can arrive twice across a reconnect. Clients should
+de-duplicate on `id`, which is unique per message.
+
 ## Configuration
 
 Configuration comes from the process environment. A `.env` file is **not** loaded yet, so
@@ -149,11 +168,10 @@ set the variables in the shell or in your service manager (see
 | ----------------- | -------------------- | ---------------------------------- | ---------- |
 | `PORT`            | `4500`               | Port to listen on.                 | Read now   |
 | `HOST`            | `127.0.0.1`          | Interface to bind.                 | Read now   |
-| `DB_PATH`         | `./commlink.sqlite`  | SQLite database file.              | Not yet    |
+| `DB_PATH`         | `./commlink.sqlite`  | SQLite database file.              | Read now   |
 | `RETENTION_HOURS` | `72`                 | How long cached messages are kept. | Not yet    |
 
-`DB_PATH` and `RETENTION_HOURS` land with the message cache; setting them today has no
-effect.
+`RETENTION_HOURS` lands with retention; setting it today has no effect.
 
 The server binds loopback by default. To expose it, put it behind a TLS reverse proxy —
 see [`../deploy/`](../deploy/).
@@ -168,5 +186,5 @@ see [`../deploy/`](../deploy/).
 | `GET`  | `/:topics/json`          | Subscribe over plain HTTP. **Available now.**      |
 
 Both subscribe routes take one topic or a comma-separated list of them. Published
-messages currently fan out to live subscribers only; they are not yet cached or
-replayed, and no endpoint requires a bearer token yet.
+messages are cached, but they still fan out to live subscribers only — there is no way
+to ask for a replay yet, and no endpoint requires a bearer token yet.

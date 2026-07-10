@@ -3,19 +3,23 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app';
 import { Broker } from '../src/broker';
 import type { Message } from '../src/message';
+import { MessageStore } from '../src/store';
 
 describe('POST /:topic', () => {
   let app: FastifyInstance;
   let broker: Broker;
+  let store: MessageStore;
 
   beforeEach(async () => {
     broker = new Broker();
-    app = buildApp({ broker });
+    store = new MessageStore();
+    app = buildApp({ broker, store });
     await app.ready();
   });
 
   afterEach(async () => {
     await app.close();
+    store.close();
   });
 
   it('accepts a bare text body and echoes the stored message', async () => {
@@ -117,6 +121,53 @@ describe('POST /:topic', () => {
 
     expect(listener).toHaveBeenCalledTimes(1);
     expect(listener.mock.calls[0]?.[0]).toEqual(res.json());
+  });
+
+  it('persists the published message', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/mytopic',
+      headers: {
+        'content-type': 'text/plain',
+        'x-title': 'Deploy finished',
+        'x-priority': '5',
+        'x-tags': 'ci,deploy',
+      },
+      payload: 'shipped',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(store.since(['mytopic'], 0)).toEqual([res.json()]);
+  });
+
+  it('persists a message before handing it to live subscribers', async () => {
+    // A subscriber that reconnects right after a frame arrives asks to replay from it.
+    // Were the message stored afterwards, that replay could come up empty.
+    let storedWhenDelivered: Message[] = [];
+    broker.subscribe(['mytopic'], () => {
+      storedWhenDelivered = store.since(['mytopic'], 0);
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/mytopic',
+      headers: { 'content-type': 'text/plain' },
+      payload: 'hello',
+    });
+
+    expect(storedWhenDelivered).toEqual([res.json()]);
+  });
+
+  it('does not persist a rejected message', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/mytopic',
+      headers: { 'content-type': 'text/plain', 'x-priority': '9' },
+      payload: 'hello',
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(store.since(['mytopic'], 0)).toEqual([]);
   });
 
   it('gives every message a distinct id', async () => {

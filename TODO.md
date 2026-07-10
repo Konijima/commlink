@@ -26,15 +26,18 @@ before the Android client is built against it.
 - [x] Handle a subscriber that stops reading. The server holds at most 1 MiB of queued
       messages for any one connection and drops it past that, so a stalled client can
       no longer grow the heap without bound.
+- [x] Persist every message to SQLite, at `DB_PATH`, before it is fanned out to live
+      subscribers. Nothing reads the cache back yet — that is `?since=` replay, below.
 
 ## Server (v0.1)
 
 The self-hostable pub/sub core.
 
 ### Message cache & replay
-- [ ] Persist every message to SQLite.
 - [ ] `?since=<unix_ts>` on subscribe replays missed messages before streaming live ones.
-- [ ] Retention: 72h, cleaned by an hourly job.
+      The store can already answer the query; nothing calls it.
+- [ ] Retention: 72h, cleaned by an hourly job. Until this lands the database grows
+      without bound.
 
 ### Auth & safety
 - [ ] Bearer-token auth on **both** publish and subscribe (`Authorization: Bearer …`,
@@ -48,7 +51,8 @@ The self-hostable pub/sub core.
       streams, then exit. Today the process is killed outright, so a restart drops
       subscribers without closing their connections.
 - [ ] Config via `.env`: `PORT`, `DB_PATH`, `RETENTION_HOURS`. Nothing reads a `.env`
-      file today — only `PORT` and `HOST`, straight from the process environment.
+      file today — only `PORT`, `HOST` and `DB_PATH`, straight from the process
+      environment.
 - [ ] Lint and format: no linter or formatter is configured, so `CONTRIBUTING.md` cannot
       point contributors at one and CI checks only types and tests. Add ESLint and
       Prettier, a `lint` script, and a CI step that runs it.
