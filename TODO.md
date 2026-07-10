@@ -119,9 +119,13 @@ The self-hostable pub/sub core.
       `/json` — while a reader that drains still gets the whole backlog. Pinned by
       `test/replay-backpressure.test.ts`, and verified by mutation: removing the drop
       check fails both drop tests.
-- [ ] Cover who owns a store: the app closes a message store or a token store it created
-      itself, and leaves an injected one open. Nothing tests either half for either store,
-      and closing a database twice is a no-op, so a regression would pass the suite.
+- [x] Cover who owns a store: the app closes a message store or a token store it created
+      itself, and leaves an injected one open. `test/ownership.test.ts` pins both halves
+      for both stores. Counting closes alone could not catch a regression — closing a
+      database twice is a no-op — so the injected halves assert the store still answers a
+      query after the app is gone, which a closed connection cannot. Verified by mutation:
+      dropping the ownership guard so the app always closes the store fails the injected
+      message-store case.
 - [ ] Cover the refusal to start on a malformed `RETENTION_HOURS`. The parser and the app
       builder each reject one, but nothing runs the server as a process and asserts it
       exits non-zero with the reason on stderr — which is the behaviour an operator with a
