@@ -112,6 +112,23 @@ curl -sN http://127.0.0.1:4500/deploys,alerts/json
 
 An invalid or over-long topic list is rejected with `400` before the stream opens.
 
+### Keepalive
+
+A topic can stay quiet for hours, and a connection with no traffic on it is one a
+reverse proxy will eventually cut and a dead peer can hide behind. So the server
+touches every subscriber every **45 seconds**:
+
+- On a WebSocket it sends a ping frame. WebSocket libraries answer with a pong on
+  their own, so a client normally needs no code for this. A subscriber that misses a
+  whole interval without answering is assumed gone and its socket is closed, which is
+  what frees the subscription server-side.
+- On a `/:topic/json` stream, which has no ping frame of its own, it writes a blank
+  line. Skip empty lines when reading the stream — `curl -sN … | jq -c` already does —
+  and parse the rest as one message per line.
+
+A client that has heard nothing at all for 90 seconds should assume the connection is
+dead and reconnect.
+
 ## Configuration
 
 Configuration comes from the process environment. A `.env` file is **not** loaded yet, so

@@ -1,6 +1,7 @@
 import fastifyWebsocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { Broker } from './broker';
+import { KEEPALIVE_INTERVAL_MS } from './keepalive';
 import {
   MAX_TOPIC_LIST_LENGTH,
   TOPIC_RULE,
@@ -17,6 +18,8 @@ import { registerSubscribeRoute } from './subscribe';
 export interface AppOptions {
   /** Injectable so tests can watch the fan-out the routes share. */
   broker?: Broker;
+  /** How often subscriber connections are pinged. Shortened by the keepalive tests. */
+  keepaliveIntervalMs?: number;
 }
 
 /**
@@ -35,6 +38,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     routerOptions: { maxParamLength: MAX_TOPIC_LIST_LENGTH },
   });
   const broker = options.broker ?? new Broker();
+  const keepaliveIntervalMs = options.keepaliveIntervalMs ?? KEEPALIVE_INTERVAL_MS;
 
   // A message body is opaque text, whatever the sender labels it. Replacing the
   // built-in parsers keeps `curl -d hello` (which sends x-www-form-urlencoded)
@@ -87,13 +91,13 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     return reply.code(200).send(message);
   });
 
-  registerStreamRoute(app, broker);
+  registerStreamRoute(app, broker, keepaliveIntervalMs);
 
   // The subscribe route lives inside a plugin scope so that it is registered after
   // `@fastify/websocket` has loaded and can claim it as an upgrade route.
   app.register(fastifyWebsocket);
   app.register(async (scope) => {
-    registerSubscribeRoute(scope, broker);
+    registerSubscribeRoute(scope, broker, keepaliveIntervalMs);
   });
 
   return app;

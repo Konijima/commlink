@@ -20,14 +20,15 @@ before the Android client is built against it.
 - [x] Multiplexed subscribe: `GET /:topic1,topic2,topic3/ws` over one connection, and
       the same on `/json`. Up to 50 topics; each frame names its own topic. One bad
       name refuses the whole subscription.
+- [x] Keepalive every 45s: a ping frame on a WebSocket, a blank line on a `/json`
+      stream. A subscriber that misses a ping is dropped, so a dead connection stops
+      holding a subscription open.
 
 ## Server (v0.1)
 
 The self-hostable pub/sub core.
 
 ### Publish & subscribe
-- [ ] Keepalive: server ping every 45s; drop dead connections. An idle `/:topic/json`
-      stream needs the same treatment, or a proxy will time it out.
 - [ ] Handle a subscriber that stops reading. Both subscribe routes write without
       checking backpressure, so a stalled client makes the server buffer without bound.
       Watch the socket's `bufferedAmount` (and `write()`'s return value on the NDJSON

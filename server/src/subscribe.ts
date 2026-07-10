@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
 import type { Broker } from './broker';
+import { KEEPALIVE_INTERVAL_MS, everyInterval } from './keepalive';
 import { parseTopicList } from './message';
 
 /**
@@ -20,7 +21,31 @@ const CLOSE_POLICY_VIOLATION = 1008;
  * Subscribers are live-only: a frame arrives for messages published while the socket
  * is open, and nothing is replayed on connect. Caching and `?since=` come later.
  */
-export function registerSubscribeRoute(app: FastifyInstance, broker: Broker): void {
+export function registerSubscribeRoute(
+  app: FastifyInstance,
+  broker: Broker,
+  intervalMs: number = KEEPALIVE_INTERVAL_MS,
+): void {
+  // Every open socket, against whether it has been heard from since the last ping.
+  const responded = new Map<WebSocket, boolean>();
+
+  everyInterval(app, intervalMs, () => {
+    for (const [socket, heardFrom] of responded) {
+      if (socket.readyState !== socket.OPEN) continue;
+
+      if (!heardFrom) {
+        // A whole interval with no pong. The peer is gone or wedged, and a TCP write
+        // to a half-open connection can sit unanswered for far longer than we want to
+        // hold a subscriber's memory. `terminate` fires `close`, which detaches it.
+        socket.terminate();
+        continue;
+      }
+
+      responded.set(socket, false);
+      socket.ping();
+    }
+  });
+
   app.get<{ Params: { topic: string } }>(
     '/:topic/ws',
     { websocket: true },
@@ -42,11 +67,21 @@ export function registerSubscribeRoute(app: FastifyInstance, broker: Broker): vo
         socket.send(JSON.stringify(message));
       });
 
-      socket.on('close', unsubscribe);
+      responded.set(socket, true);
+      // `ws` answers a ping with a pong on its own, so a healthy client needs no code
+      // of its own to stay subscribed.
+      socket.on('pong', () => responded.set(socket, true));
+
+      const detach = () => {
+        responded.delete(socket);
+        unsubscribe();
+      };
+
+      socket.on('close', detach);
 
       // `ws` throws on an 'error' event with no listener. A socket that errors also
       // closes, so the unsubscribe above is what actually detaches the listener.
-      socket.on('error', unsubscribe);
+      socket.on('error', detach);
     },
   );
 }
