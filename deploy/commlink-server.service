@@ -17,6 +17,8 @@ Environment=HOST=127.0.0.1
 # system unit and $XDG_STATE_HOME (usually ~/.local/state) for a user unit.
 StateDirectory=commlink
 Environment=DB_PATH=%S/commlink/commlink.sqlite
+# How long a message stays replayable. Defaults to 72; a whole number of hours.
+Environment=RETENTION_HOURS=72
 # Or load a full environment file instead of the lines above:
 # EnvironmentFile=%h/.config/commlink/server.env
 Restart=on-failure

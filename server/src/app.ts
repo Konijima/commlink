@@ -11,6 +11,7 @@ import {
   parseTags,
   parseTitle,
 } from './message.js';
+import { registerRetention } from './retention.js';
 import { MessageStore } from './store.js';
 import { registerStreamRoute } from './stream.js';
 import { registerSubscribeRoute } from './subscribe.js';
@@ -27,6 +28,10 @@ export interface AppOptions {
   store?: MessageStore;
   /** How often subscriber connections are pinged. Shortened by the keepalive tests. */
   keepaliveIntervalMs?: number;
+  /** How long a message stays replayable, in hours. Defaults to 72. */
+  retentionHours?: number;
+  /** How often expired messages are swept. Shortened by the retention tests. */
+  retentionSweepIntervalMs?: number;
   /**
    * How many bytes may queue for one subscriber before it is dropped. Lowered by the
    * backpressure tests, which cannot stall a real socket by a megabyte quickly.
@@ -55,6 +60,11 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   if (options.store === undefined) {
     app.addHook('onClose', async () => store.close());
   }
+
+  registerRetention(app, store, {
+    retentionHours: options.retentionHours,
+    sweepIntervalMs: options.retentionSweepIntervalMs,
+  });
 
   const subscriberOptions = {
     keepaliveIntervalMs: options.keepaliveIntervalMs,
