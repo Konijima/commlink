@@ -1,5 +1,9 @@
 import fastifyWebsocket from '@fastify/websocket';
-import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
+import Fastify, {
+  type FastifyError,
+  type FastifyInstance,
+  type FastifyServerOptions,
+} from 'fastify';
 import { registerAuth } from './auth.js';
 import { Broker } from './broker.js';
 import {
@@ -59,6 +63,13 @@ export interface AppOptions {
    * underneath it and would need hundreds of messages to do that 4 KB at a time.
    */
   maxBodyBytes?: number;
+  /**
+   * The pino logger configuration, as {@link https://fastify.dev/docs/latest/Reference/Logging/ Fastify}
+   * takes it. Defaults to `false` — off — so the test suite stays quiet and `app.inject`
+   * output is not drowned in request lines. The entrypoint passes a real configuration
+   * built from `LOG_LEVEL`; the logging test passes one with a capturing stream.
+   */
+  logger?: FastifyServerOptions['logger'];
 }
 
 /**
@@ -71,7 +82,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   const maxBodyBytes = options.maxBodyBytes ?? MAX_BODY_BYTES;
 
   const app = Fastify({
-    logger: false,
+    logger: options.logger ?? false,
     // A body over the limit is refused while it is being read, which is earlier than
     // any hook of ours can run — earlier, in particular, than the one that
     // authenticates. That ordering is the point: an anonymous client cannot make the

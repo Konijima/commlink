@@ -1,5 +1,6 @@
 import { buildApp } from './app.js';
 import { loadEnvFile } from './env.js';
+import { buildLoggerOptions, parseLogLevel } from './logging.js';
 import { parseRetentionHours } from './retention.js';
 import { installShutdownHandlers } from './shutdown.js';
 import { MessageStore } from './store.js';
@@ -30,21 +31,33 @@ try {
   process.exit(1);
 }
 
+let logger;
+try {
+  logger = buildLoggerOptions(parseLogLevel(process.env.LOG_LEVEL));
+} catch (err) {
+  // Refuse to start rather than run at a level the operator did not mean to set.
+  console.error((err as Error).message);
+  process.exit(1);
+}
+
 const app = buildApp({
   store: new MessageStore(DB_PATH),
   tokens: new TokenStore(DB_PATH),
   retentionHours,
+  logger,
 });
 
 app
   .listen({ port: PORT, host: HOST })
   .then((address) => {
-    console.log(`commlink server listening on ${address}`);
+    app.log.info(`commlink server listening on ${address}`);
     // Turn a stop signal into a clean close now that there is a listening server to
     // drain: subscribers are told to go away rather than having their sockets severed.
-    installShutdownHandlers(app);
+    // The shutdown lines go through the same logger, so a stop is recorded in the same
+    // structured stream as everything else.
+    installShutdownHandlers(app, { log: (message) => app.log.info(message) });
   })
   .catch((err) => {
-    console.error(err);
+    app.log.error(err);
     process.exit(1);
   });

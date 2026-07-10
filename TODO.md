@@ -102,7 +102,11 @@ The self-hostable pub/sub core.
 - [x] Lint and format: ESLint (typescript-eslint) and Prettier are configured, with a
       `pnpm lint` script (ESLint + `prettier --check`) and a `pnpm format` script. CI runs
       `pnpm -r lint`, and `CONTRIBUTING.md` points contributors at both.
-- [ ] Structured logging with pino.
+- [x] Structured logging with pino. The server logs JSON on stdout through Fastify's
+      built-in logger, with `LOG_LEVEL` (`trace`…`fatal`, or `silent`) selecting verbosity
+      and an unknown level refusing to start rather than running where it was. A subscribe
+      token passed as `?auth=` rides in the URL, which the request log records, so the
+      token is redacted from the logged line — the one place it could otherwise leak.
 - [x] Test suite (vitest): publish→subscribe roundtrip, replay-since, auth rejection,
       rate limit.
 - [x] CI builds the server and boots the built output (`pnpm smoke`). It ran only
