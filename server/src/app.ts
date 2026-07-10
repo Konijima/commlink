@@ -116,13 +116,13 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     return reply.code(200).send(message);
   });
 
-  registerStreamRoute(app, broker, subscriberOptions);
+  registerStreamRoute(app, broker, store, subscriberOptions);
 
   // The subscribe route lives inside a plugin scope so that it is registered after
   // `@fastify/websocket` has loaded and can claim it as an upgrade route.
   app.register(fastifyWebsocket);
   app.register(async (scope) => {
-    registerSubscribeRoute(scope, broker, subscriberOptions);
+    registerSubscribeRoute(scope, broker, store, subscriberOptions);
   });
 
   return app;

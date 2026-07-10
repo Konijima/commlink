@@ -3,7 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import { buildApp } from '../src/app';
 import { Broker } from '../src/broker';
-import { MAX_SUBSCRIBE_TOPICS, MAX_TOPIC_LENGTH, TOPIC_LIST_RULE } from '../src/message';
+import {
+  MAX_SUBSCRIBE_TOPICS,
+  MAX_TOPIC_LENGTH,
+  SINCE_RULE,
+  TOPIC_LIST_RULE,
+} from '../src/message';
 import type { Message } from '../src/message';
 
 describe('GET /:topic/json', () => {
@@ -60,10 +65,10 @@ describe('GET /:topic/json', () => {
   }
 
   /**
-   * Open a stream on one topic, or on a comma-separated list of them, and resolve
-   * once it is attached.
+   * Open a stream on one topic, or on a comma-separated list of them, optionally with
+   * a query string, and resolve once it is attached.
    */
-  async function open(topicList: string): Promise<Response> {
+  async function open(topicList: string, query = ''): Promise<Response> {
     // One `broker.subscribe` call attaches the listener to every topic at once, so
     // seeing it on the first proves it landed on all of them.
     const [first] = topicList.split(',');
@@ -72,7 +77,9 @@ describe('GET /:topic/json', () => {
     controllers.push(controller);
 
     // Resolves as soon as the headers are flushed; the body arrives line by line.
-    const response = await fetch(`${httpBase}/${topicList}/json`, { signal: controller.signal });
+    const response = await fetch(`${httpBase}/${topicList}/json${query}`, {
+      signal: controller.signal,
+    });
 
     await vi.waitFor(() => expect(broker.listenerCount(first)).toBeGreaterThan(before));
 
@@ -85,6 +92,13 @@ describe('GET /:topic/json', () => {
       headers: { 'content-type': 'text/plain', ...headers },
       body,
     });
+  }
+
+  /** Publish and resolve with the message the server stored, whose `timestamp` bounds a replay. */
+  async function publishMessage(topic: string, body: string): Promise<Message> {
+    const response = await publish(topic, body);
+    expect(response.status).toBe(200);
+    return (await response.json()) as Message;
   }
 
   it('streams a published message as one JSON line', async () => {
@@ -213,6 +227,84 @@ describe('GET /:topic/json', () => {
       expect(broker.listenerCount(topic)).toBe(0);
     },
   );
+
+  describe('?since= replay', () => {
+    it('replays a message published before the stream opened', async () => {
+      const missed = await publishMessage('alpha', 'published while offline');
+
+      const stream = lines(await open('alpha', `?since=${missed.timestamp}`));
+
+      expect(await stream.next()).toEqual(missed);
+    });
+
+    it('replays the backlog in publication order, then streams live messages', async () => {
+      const first = await publishMessage('alpha', 'first');
+      await publishMessage('alpha', 'second');
+
+      const stream = lines(await open('alpha', `?since=${first.timestamp}`));
+      await publish('alpha', 'live');
+
+      expect((await stream.next()).message).toBe('first');
+      expect((await stream.next()).message).toBe('second');
+      expect((await stream.next()).message).toBe('live');
+    });
+
+    it('replays nothing published before the bound', async () => {
+      const old = await publishMessage('alpha', 'older than the bound');
+
+      const stream = lines(await open('alpha', `?since=${old.timestamp + 1}`));
+      await publish('alpha', 'published while listening');
+
+      // Had the old message replayed, it would be the first line.
+      expect((await stream.next()).message).toBe('published while listening');
+    });
+
+    it('replays the whole backlog for ?since=0', async () => {
+      await publishMessage('alpha', 'the very first message');
+
+      const stream = lines(await open('alpha', '?since=0'));
+
+      expect((await stream.next()).message).toBe('the very first message');
+    });
+
+    it('replays only the topics the client subscribed to', async () => {
+      const missed = await publishMessage('alpha', 'from alpha');
+      await publishMessage('gamma', 'from gamma');
+      await publishMessage('beta', 'from beta');
+
+      const stream = lines(await open('alpha,beta', `?since=${missed.timestamp}`));
+
+      expect((await stream.next()).message).toBe('from alpha');
+      expect((await stream.next()).message).toBe('from beta');
+    });
+
+    it('carries the same backlog a WebSocket subscriber replays', async () => {
+      const missed = await publishMessage('alpha', 'published while offline');
+
+      const stream = lines(await open('alpha', `?since=${missed.timestamp}`));
+      const socket = new WebSocket(
+        `${httpBase.replace(/^http/, 'ws')}/alpha/ws?since=${missed.timestamp}`,
+      );
+      const frame = new Promise<Message>((resolve, reject) => {
+        socket.once('message', (data) => resolve(JSON.parse(data.toString()) as Message));
+        socket.once('error', reject);
+      });
+
+      expect(await stream.next()).toEqual(await frame);
+      socket.close();
+    });
+
+    it.each(['yesterday', '-1', '1.5', ''])(
+      'rejects a stream with since=%j with 400',
+      async (since) => {
+        const response = await fetch(`${httpBase}/alpha/json?since=${encodeURIComponent(since)}`);
+
+        expect(response.status).toBe(400);
+        expect(((await response.json()) as { error: string }).error).toBe(SINCE_RULE);
+        expect(broker.listenerCount('alpha')).toBe(0);
+      },
+    );
+  });
 
   describe('multiplexed over one stream', () => {
     it('writes messages from every topic in the list', async () => {

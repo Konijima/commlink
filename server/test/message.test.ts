@@ -3,7 +3,9 @@ import {
   MAX_SUBSCRIBE_TOPICS,
   MAX_TOPIC_LENGTH,
   MAX_TOPIC_LIST_LENGTH,
+  SINCE_RULE,
   TOPIC_LIST_RULE,
+  parseSince,
   parseTopicList,
 } from '../src/message';
 
@@ -75,5 +77,46 @@ describe('parseTopicList', () => {
 
     expect(longest).toHaveLength(MAX_TOPIC_LIST_LENGTH);
     expect(parseTopicList(longest)).toHaveLength(MAX_SUBSCRIBE_TOPICS);
+  });
+});
+
+describe('parseSince', () => {
+  it('returns null when the parameter is absent, meaning no replay', () => {
+    expect(parseSince(undefined)).toBeNull();
+  });
+
+  it('parses a Unix timestamp in seconds', () => {
+    expect(parseSince('1700000000')).toBe(1_700_000_000);
+  });
+
+  it('accepts 0, which is how a client asks for the whole backlog', () => {
+    expect(parseSince('0')).toBe(0);
+  });
+
+  it('ignores surrounding whitespace', () => {
+    expect(parseSince(' 1700000000 ')).toBe(1_700_000_000);
+  });
+
+  it('takes the first value when the parameter repeats', () => {
+    expect(parseSince(['1700000000', '1800000000'])).toBe(1_700_000_000);
+  });
+
+  it.each([
+    ['an empty value', ''],
+    ['only whitespace', '   '],
+    ['a negative timestamp', '-1'],
+    ['a fractional timestamp', '1.5'],
+    ['exponent notation', '1e3'],
+    ['hexadecimal', '0x10'],
+    ['a leading plus', '+1'],
+    ['a word', 'yesterday'],
+    ['digits with a trailing suffix', '12abc'],
+  ])('rejects %s', (_description, raw) => {
+    expect(() => parseSince(raw)).toThrow(SINCE_RULE);
+  });
+
+  it('rejects a timestamp past the safe-integer range', () => {
+    // 2^53 + 1, which a double cannot tell apart from 2^53.
+    expect(() => parseSince('9007199254740993')).toThrow(SINCE_RULE);
   });
 });

@@ -3,7 +3,9 @@ import type { WebSocket } from 'ws';
 import { MAX_BUFFERED_BYTES } from './backpressure';
 import type { Broker } from './broker';
 import { KEEPALIVE_INTERVAL_MS, everyInterval } from './keepalive';
-import { parseTopicList } from './message';
+import type { Message } from './message';
+import { parseSince, parseTopicList } from './message';
+import type { MessageStore } from './store';
 
 /**
  * RFC 6455 close code for a message that violates the endpoint's policy. Sent when
@@ -26,12 +28,15 @@ export interface SubscribeOptions {
  * topics needs only one connection. Each frame names its own topic, which is how a
  * multiplexed subscriber tells them apart.
  *
- * Subscribers are live-only: a frame arrives for messages published while the socket
- * is open, and nothing is replayed on connect. Caching and `?since=` come later.
+ * A subscriber sees what is published while its socket is open. `?since=<unix_ts>`
+ * additionally replays the stored backlog from that second onwards, so a client whose
+ * connection dropped reconnects with `?since=` set to the last timestamp it saw and
+ * misses nothing in between.
  */
 export function registerSubscribeRoute(
   app: FastifyInstance,
   broker: Broker,
+  store: MessageStore,
   options: SubscribeOptions = {},
 ): void {
   const intervalMs = options.keepaliveIntervalMs ?? KEEPALIVE_INTERVAL_MS;
@@ -57,22 +62,24 @@ export function registerSubscribeRoute(
     }
   });
 
-  app.get<{ Params: { topic: string } }>(
+  app.get<{ Params: { topic: string }; Querystring: { since?: string } }>(
     '/:topic/ws',
     { websocket: true },
     (socket: WebSocket, request) => {
       let topics: string[];
+      let since: number | null;
       try {
         topics = parseTopicList(request.params.topic);
+        since = parseSince(request.query.since);
       } catch (error) {
-        // The upgrade has already completed, so a bad topic list is reported as a
-        // close frame rather than a 400. Clients read the reason off the close event.
-        // `ws` throws on a reason over 123 bytes; both topic rules are well under it.
+        // The upgrade has already completed, so a bad request is reported as a close
+        // frame rather than a 400. Clients read the reason off the close event. `ws`
+        // throws on a reason over 123 bytes; every rule here is well under it.
         socket.close(CLOSE_POLICY_VIOLATION, (error as Error).message);
         return;
       }
 
-      const unsubscribe = broker.subscribe(topics, (message) => {
+      const send = (message: Message) => {
         // A socket that is closing still accepts `send`, which then queues forever.
         if (socket.readyState !== socket.OPEN) return;
 
@@ -85,7 +92,9 @@ export function registerSubscribeRoute(
         }
 
         socket.send(JSON.stringify(message));
-      });
+      };
+
+      const unsubscribe = broker.subscribe(topics, send);
 
       responded.set(socket, true);
       // `ws` answers a ping with a pong on its own, so a healthy client needs no code
@@ -102,6 +111,15 @@ export function registerSubscribeRoute(
       // `ws` throws on an 'error' event with no listener. A socket that errors also
       // closes, so the unsubscribe above is what actually detaches the listener.
       socket.on('error', detach);
+
+      // Read the backlog only once the live listener is attached, so a message
+      // published in between is delivered rather than dropped into the gap between
+      // the two. It can then arrive twice — once from the store, once live — which is
+      // the same duplicate an inclusive `since` bound already produces, and which
+      // clients resolve by de-duplicating on `id`.
+      if (since !== null) {
+        for (const message of store.since(topics, since)) send(message);
+      }
     },
   );
 }

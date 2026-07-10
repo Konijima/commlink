@@ -73,12 +73,41 @@ export function parseTopicList(raw: string): string[] {
 }
 
 /**
- * Node exposes a repeated header as an array. Take the first value rather than
- * joining, so a duplicated `X-Title` cannot smuggle a comma-joined title through.
+ * Node exposes a repeated header — and Fastify a repeated query parameter — as an
+ * array. Take the first value rather than joining, so a duplicated `X-Title` cannot
+ * smuggle a comma-joined title through.
  */
 export function headerValue(raw: string | string[] | undefined): string | undefined {
   if (Array.isArray(raw)) return raw[0];
   return raw;
+}
+
+/** What a subscribe route tells a client that asked to replay from a bad timestamp. */
+export const SINCE_RULE = 'since must be a whole number of seconds since the Unix epoch';
+
+/**
+ * Parse `?since=` on a subscribe route: the timestamp to replay the backlog from,
+ * in seconds since the Unix epoch. Absent means no replay — the subscriber sees only
+ * what is published from now on.
+ *
+ * Throws a `RangeError` naming the rule for anything that is not a non-negative whole
+ * number, including an empty `?since=`: a client that meant to replay everything says
+ * so with `?since=0`, and one that sent a broken timestamp should hear about it rather
+ * than silently lose its backlog.
+ */
+export function parseSince(raw: string | string[] | undefined): number | null {
+  const value = headerValue(raw);
+  if (value === undefined) return null;
+
+  const trimmed = value.trim();
+  // Digits only: `parseInt` would take `12abc`, and `Number` would take `1e3`, ` `,
+  // `0x10` and `-0`. The safe-integer bound then rejects a timestamp so far in the
+  // future that it could not survive the round trip through a double.
+  if (!/^\d+$/.test(trimmed) || !Number.isSafeInteger(Number(trimmed))) {
+    throw new RangeError(SINCE_RULE);
+  }
+
+  return Number(trimmed);
 }
 
 /** Parse `X-Priority`. Absent means the default; anything but 1–5 is an error. */
