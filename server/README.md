@@ -90,11 +90,11 @@ curl -H "Authorization: Bearer $TOKEN" -d "hello" http://127.0.0.1:4500/mytopic
 
 Metadata travels in optional headers:
 
-| Header       | Default | Meaning                                                   |
-| ------------ | ------- | --------------------------------------------------------- |
-| `X-Title`    | none    | Notification title. Blank is treated as absent.           |
-| `X-Priority` | `3`     | Integer `1`–`5`. Anything else is rejected.               |
-| `X-Tags`     | none    | Comma-separated tags; surrounding space is ignored.       |
+| Header       | Default | Meaning                                                              |
+| ------------ | ------- | -------------------------------------------------------------------- |
+| `X-Title`    | none    | Notification title, at most 256 bytes. Blank is treated as absent.   |
+| `X-Priority` | `3`     | Integer `1`–`5`. Anything else is rejected.                          |
+| `X-Tags`     | none    | Up to 16 comma-separated tags of 64 bytes each; space is ignored.    |
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
@@ -104,6 +104,22 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 Topic names are 1–64 characters of `A-Z`, `a-z`, `0-9`, `-` or `_`. A message needs a
 body or a title; an empty request with neither is rejected with `400`.
+
+### Metadata size
+
+`X-Title` and `X-Tags` are bounded like the body is, and for the same reason: a title is
+one line on a lock screen, and nothing that long belongs there. Each is measured in the
+bytes it arrived as. Over-long metadata is rejected with `400` naming the rule, rather
+than truncated — half a title is not what the sender asked to be shown:
+
+```bash
+curl -i -H "Authorization: Bearer $TOKEN" -H "X-Tags: $(printf 'a,%.0s' {1..17})" \
+     -d "hello" http://127.0.0.1:4500/mytopic
+# HTTP/1.1 400 Bad Request
+# {"error":"X-Tags must be at most 16 tags of at most 64 bytes each"}
+```
+
+Empty tags are dropped before the count, so `ci,,deploy` is two tags.
 
 ### Body size
 

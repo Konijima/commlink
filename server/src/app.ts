@@ -149,14 +149,21 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         return reply.code(400).send({ error: TOPIC_RULE });
       }
 
+      // Each of these reports an unusable header by naming the rule it broke. The body
+      // is bounded by `bodyLimit` above, which answers 413 before this handler runs;
+      // these are the metadata alongside it, and a client that got one wrong hears
+      // which one rather than a bare refusal.
       let priority: number;
+      let title: string | null;
+      let tags: string[];
       try {
         priority = parsePriority(headerValue(request.headers['x-priority']));
+        title = parseTitle(headerValue(request.headers['x-title']));
+        tags = parseTags(headerValue(request.headers['x-tags']));
       } catch (error) {
         return reply.code(400).send({ error: (error as Error).message });
       }
 
-      const title = parseTitle(headerValue(request.headers['x-title']));
       const text = typeof request.body === 'string' ? request.body : '';
 
       // A notification with neither body nor title would show up blank.
@@ -169,7 +176,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         message: text,
         title,
         priority,
-        tags: parseTags(headerValue(request.headers['x-tags'])),
+        tags,
       });
 
       // Store before fanning out. A message a live subscriber has already seen must

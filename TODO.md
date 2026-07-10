@@ -49,15 +49,19 @@ before the Android client is built against it.
 - [x] Reject publish bodies larger than 4096 bytes with `413`. The limit is counted in
       bytes and enforced while the body is read — before the token is checked — so an
       unauthenticated client can no longer make the server hold a large body.
+- [x] Bound the publish metadata headers: `X-Title` to 256 bytes, `X-Tags` to 16 tags of
+      64 bytes each. Both are measured in the bytes that arrived, and an over-long one is
+      rejected with `400` naming the rule rather than silently truncated.
 
 ## Server (v0.1)
 
 The self-hostable pub/sub core.
 
 ### Auth & safety
-- [ ] Bound the request headers too. The body is capped at 4096 bytes, but `X-Title` and
-      `X-Tags` are only bounded by Node's 16 KiB header limit, and a 16 KiB title becomes
-      a 16 KiB notification. No length is checked or truncated today.
+- [ ] Decode a non-ASCII `X-Title` or `X-Tags` as UTF-8 (`BUGS.md#2`). Header values
+      arrive latin1-decoded, so an accented title is stored and delivered as mojibake.
+      Settle what a client should send first — raw UTF-8 bytes, or RFC 2047 encoding —
+      since that choice is what the Android client will have to implement.
 - [ ] Manage minted tokens: list them, and revoke one without editing the database by
       hand. Minting is all the CLI can do today.
 - [ ] Decide whether the publish rate limit needs to outlive the process. It is counted
