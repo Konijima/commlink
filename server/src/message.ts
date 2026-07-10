@@ -46,6 +46,38 @@ export function bodyRule(maxBytes: number = MAX_BODY_BYTES): string {
 }
 
 /**
+ * The largest `X-Title` accepted, in bytes.
+ *
+ * A title is the one line a notification shows before it is opened; a limit this size
+ * is past what any lock screen renders. Node caps the whole header block at 16 KiB, so
+ * without a rule of its own a title could be nearly that long — refused for a body,
+ * accepted for the line above it.
+ */
+export const MAX_TITLE_BYTES = 256;
+
+/** What publish tells a client whose `X-Title` is over the limit. */
+export const TITLE_RULE = `X-Title must be at most ${MAX_TITLE_BYTES} bytes`;
+
+/** How many tags one message may carry, and how long each may be, in bytes. */
+export const MAX_TAGS = 16;
+export const MAX_TAG_BYTES = 64;
+
+/** What publish tells a client whose `X-Tags` is over either limit. */
+export const TAGS_RULE = `X-Tags must be at most ${MAX_TAGS} tags of at most ${MAX_TAG_BYTES} bytes each`;
+
+/**
+ * How many bytes a header value took on the wire.
+ *
+ * Node decodes header values as latin1 — one character per byte received — so a UTF-8
+ * title arrives as one character for each byte the client sent. Measuring it back as
+ * latin1 therefore counts those same bytes, where measuring it as UTF-8 would count
+ * what its mojibake costs to re-encode, which is nothing the client ever sent.
+ */
+function headerBytes(value: string): number {
+  return Buffer.byteLength(value, 'latin1');
+}
+
+/**
  * How many topics one connection may multiplex. The limit keeps a single client from
  * pinning an unbounded subscription set — and the URL that names it — on the server.
  */
@@ -140,19 +172,37 @@ export function parsePriority(raw: string | undefined): number {
   return Number(trimmed);
 }
 
-/** Parse `X-Tags`: comma-separated, surrounding space ignored, empties dropped. */
+/**
+ * Parse `X-Tags`: comma-separated, surrounding space ignored, empties dropped.
+ *
+ * Throws a `RangeError` naming the rule for too many tags, or for one that is too long.
+ * Both are measured after the empties are dropped and the space is trimmed, so what is
+ * bounded is what a subscriber will be sent.
+ */
 export function parseTags(raw: string | undefined): string[] {
   if (raw === undefined) return [];
 
-  return raw
+  const tags = raw
     .split(',')
     .map((tag) => tag.trim())
     .filter((tag) => tag.length > 0);
+
+  if (tags.length > MAX_TAGS) throw new RangeError(TAGS_RULE);
+  if (tags.some((tag) => headerBytes(tag) > MAX_TAG_BYTES)) throw new RangeError(TAGS_RULE);
+
+  return tags;
 }
 
-/** Parse `X-Title`. A blank title is the same as no title at all. */
+/**
+ * Parse `X-Title`. A blank title is the same as no title at all.
+ *
+ * Throws a `RangeError` naming the rule for an over-long one, rather than truncating:
+ * half a title is not what the sender asked to be shown. The bound is on the value as
+ * sent, so padding a long title with space does not buy it room.
+ */
 export function parseTitle(raw: string | undefined): string | null {
   if (raw === undefined) return null;
+  if (headerBytes(raw) > MAX_TITLE_BYTES) throw new RangeError(TITLE_RULE);
 
   const trimmed = raw.trim();
   return trimmed.length > 0 ? trimmed : null;

@@ -13,6 +13,25 @@ Notes: <cause, workaround, or fix once known>
 
 ---
 
+### 2 — a non-ASCII title is stored and delivered as mojibake   [open]   severity: medium
+Repro: publish a title with an accent, then read the message back.
+
+```
+curl -H "Authorization: Bearer $TOKEN" -H "X-Title: Café déjà vu" \
+     -d "hello" http://127.0.0.1:4500/mytopic
+{"id":"…","topic":"mytopic","title":"CafÃ© dÃ©jÃ  vu","message":"hello",…}
+```
+
+Notes: Node decodes request header values as latin1 — one character per byte received —
+so the two bytes of a UTF-8 `é` arrive as the two characters `Ã©`, and that is what is
+persisted and streamed to subscribers. The body is unaffected: it is read as UTF-8.
+
+A fix is `Buffer.from(value, 'latin1').toString('utf8')` on `X-Title` and `X-Tags`, but
+what a client is expected to send should be settled first — raw UTF-8 bytes, or RFC 2047
+encoded words — because a lone latin1 title (`Café` sent as one 0xE9 byte) decodes to a
+replacement character under either reading. Bounding the headers by their *received*
+bytes (256 for a title) is unaffected by this and stays correct either way.
+
 ### 1 — the built server cannot start   [fixed]   severity: high
 Repro: `pnpm -C server build && pnpm -C server start`
 
