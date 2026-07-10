@@ -11,7 +11,13 @@ ExecStart=/usr/bin/node dist/server.js
 Environment=NODE_ENV=production
 Environment=PORT=4500
 Environment=HOST=127.0.0.1
-# Or load a full environment file instead of the two lines above:
+# The message database. Keep it outside the checkout: DB_PATH is resolved relative to
+# WorkingDirectory, so leaving it unset writes commlink.sqlite into the source tree.
+# StateDirectory creates the directory and owns its permissions; %S is /var/lib for a
+# system unit and $XDG_STATE_HOME (usually ~/.local/state) for a user unit.
+StateDirectory=commlink
+Environment=DB_PATH=%S/commlink/commlink.sqlite
+# Or load a full environment file instead of the lines above:
 # EnvironmentFile=%h/.config/commlink/server.env
 Restart=on-failure
 RestartSec=5

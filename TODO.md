@@ -60,8 +60,23 @@ The self-hostable pub/sub core.
       Prettier, a `lint` script, and a CI step that runs it.
 - [ ] Structured logging with pino.
 - [ ] Test suite (vitest): publish→subscribe roundtrip, replay-since, auth rejection,
-      rate limit.
-- [ ] `deploy/`: a systemd unit and a TLS reverse-proxy (Caddy) snippet.
+      rate limit. The roundtrip and replay-since halves exist; auth and rate limit
+      arrive with those features.
+- [ ] CI builds the server and boots the built output. It runs only `typecheck` and
+      `test` today, which is why `BUGS.md#1` — the built server cannot start — went
+      unnoticed: both `pnpm dev` and the tests resolve imports the built output cannot.
+- [ ] Cover the gap where `?since=` replay meets the per-connection buffer limit. A
+      replayed backlog is written through the same path as a live message, so a large
+      replay to a slow subscriber can drop the connection mid-replay. The behaviour is
+      unpinned by any test.
+- [ ] Cover who owns the message store: the app closes a store it created and leaves an
+      injected one open. Nothing tests either half, and closing a database twice is a
+      no-op, so a regression would pass the suite.
+- [ ] Test on the Node.js versions the docs promise. The READMEs say Node 20+, CI runs
+      Node 22 only.
+- [ ] `deploy/`: a systemd unit and a TLS reverse-proxy (Caddy) snippet. Both files
+      exist; the unit stays unchecked until the built server can actually start it
+      (`BUGS.md#1`) and it has been run end-to-end.
 
 ## Android app (v0.2)
 

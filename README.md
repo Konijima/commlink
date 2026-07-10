@@ -23,9 +23,10 @@ curl -d "Backup finished" https://your-server/backups
   reverse proxy.
 - **Simple to publish.** Any HTTP client works: `curl`, a cron job, a shell script,
   a webhook.
-- **Reliable delivery** *(in progress).* Messages will be cached server-side and replayed
-  on reconnect, so a flaky connection never loses a notification. Today the server fans
-  out to live subscribers only.
+- **Reliable delivery.** Every message is stored server-side, and a subscriber that
+  reconnects with `?since=<unix_ts>` is sent what it missed, so a flaky connection does
+  not lose a notification. Stored messages are not yet expired — retention is on the
+  roadmap.
 
 ## How it works
 
