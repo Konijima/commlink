@@ -391,7 +391,10 @@ expired does not serve them on the way back up.
 Configuration comes from the process environment. On start the server also loads a `.env`
 file from its working directory, so [`.env.example`](./.env.example) can be copied to
 `.env` and picked up; a real environment variable still wins, so a service manager (see
-[`../deploy/`](../deploy/)) or a one-off `PORT=… pnpm start` overrides a file value.
+[`../deploy/`](../deploy/)) or a one-off `PORT=… pnpm start` overrides a file value. The
+file is `KEY=value` lines, with `#` comments on their own line; a line it cannot read, or
+one that sets the same key twice, refuses to start naming the line rather than guessing at
+which value was meant.
 
 | Variable          | Default             | Meaning                                      |
 | ----------------- | ------------------- | -------------------------------------------- |
