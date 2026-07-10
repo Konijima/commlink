@@ -15,15 +15,17 @@ before the Android client is built against it.
 - [x] `GET /:topic/ws` — upgrade to WebSocket and push each new message as a JSON frame
       `{ id, topic, title, message, priority, tags, timestamp }`. Live-only for now;
       an invalid topic closes the socket with `1008`.
+- [x] `GET /:topic/json` — the same stream over plain HTTP, as newline-delimited JSON,
+      for clients that cannot open a WebSocket. Live-only; an invalid topic gets `400`.
 
 ## Server (v0.1)
 
 The self-hostable pub/sub core.
 
 ### Publish & subscribe
-- [ ] `GET /:topic/json` — HTTP long-poll / SSE fallback for the same stream.
 - [ ] Multiplexed subscribe: `GET /:topic1,topic2,topic3/ws` over one connection.
-- [ ] Keepalive: server ping every 45s; drop dead connections.
+- [ ] Keepalive: server ping every 45s; drop dead connections. An idle `/:topic/json`
+      stream needs the same treatment, or a proxy will time it out.
 
 ### Message cache & replay
 - [ ] Persist every message to SQLite.
@@ -38,6 +40,9 @@ The self-hostable pub/sub core.
 - [ ] Reject payloads larger than 4 KB.
 
 ### Ops
+- [ ] Graceful shutdown on `SIGTERM`/`SIGINT`: stop accepting, end the open subscriber
+      streams, then exit. Today the process is killed outright, so a restart drops
+      subscribers without closing their connections.
 - [ ] Config via `.env`: `PORT`, `DB_PATH`, `RETENTION_HOURS`.
 - [ ] Structured logging with pino.
 - [ ] Test suite (vitest): publish→subscribe roundtrip, replay-since, auth rejection,

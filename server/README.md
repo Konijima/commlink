@@ -75,6 +75,22 @@ replayed on connect. Caching and `?since=` replay are on the roadmap.
 Subscribing to a name that is not a valid topic closes the socket with code `1008`
 and the reason `invalid topic`.
 
+### Without a WebSocket
+
+`GET /:topic/json` carries the same messages as a newline-delimited JSON stream — one
+message per line, written as it is published. The response stays open until the client
+disconnects, so any HTTP client can subscribe:
+
+```bash
+curl -sN http://127.0.0.1:4500/mytopic/json
+# {"id":"…","topic":"mytopic","title":null,"message":"hello","priority":3,"tags":[],"timestamp":1700000000}
+# {"id":"…","topic":"mytopic","title":null,"message":"there","priority":3,"tags":[],"timestamp":1700000005}
+```
+
+`curl` needs `-N` here: without it the output is buffered and nothing appears until the
+stream ends. The stream is live-only, exactly like the socket. An invalid topic is
+rejected with `400` before the stream opens.
+
 ## Configuration
 
 Configuration comes from the environment (a local `.env` is loaded in development; see
@@ -97,8 +113,8 @@ see [`../deploy/`](../deploy/).
 | `GET`  | `/healthz`               | Liveness probe (200 + uptime). **Available now.**  |
 | `POST` | `/:topic`                | Publish a message to a topic. **Available now.**   |
 | `GET`  | `/:topic/ws`             | Subscribe over WebSocket. **Available now.**       |
-| `GET`  | `/:topic/json`           | HTTP long-poll / SSE fallback.                     |
+| `GET`  | `/:topic/json`           | Subscribe over plain HTTP. **Available now.**      |
 
-Subscribing to several topics over one socket (`/:topic1,topic2/ws`) is on the roadmap,
-as is `/:topic/json`. Published messages currently fan out to live subscribers only;
-they are not yet cached or replayed, and no endpoint requires a bearer token yet.
+Subscribing to several topics over one connection (`/:topic1,topic2/ws`) is on the
+roadmap. Published messages currently fan out to live subscribers only; they are not yet
+cached or replayed, and no endpoint requires a bearer token yet.

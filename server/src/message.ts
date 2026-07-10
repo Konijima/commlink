@@ -22,6 +22,10 @@ const TOPIC_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 /** Paths the server serves itself; they can never be topic names. */
 const RESERVED_TOPICS = new Set(['healthz']);
 
+/** What every route tells a client that named a topic the server will not serve. */
+export const TOPIC_RULE =
+  'topic must be 1-64 characters of A-Z, a-z, 0-9, hyphen or underscore';
+
 export function isValidTopic(topic: string): boolean {
   return TOPIC_PATTERN.test(topic) && !RESERVED_TOPICS.has(topic);
 }

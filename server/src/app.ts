@@ -2,6 +2,7 @@ import fastifyWebsocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { Broker } from './broker';
 import {
+  TOPIC_RULE,
   createMessage,
   headerValue,
   isValidTopic,
@@ -9,6 +10,7 @@ import {
   parseTags,
   parseTitle,
 } from './message';
+import { registerStreamRoute } from './stream';
 import { registerSubscribeRoute } from './subscribe';
 
 export interface AppOptions {
@@ -46,9 +48,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     const { topic } = request.params;
 
     if (!isValidTopic(topic)) {
-      return reply.code(400).send({
-        error: 'topic must be 1-64 characters of A-Z, a-z, 0-9, hyphen or underscore',
-      });
+      return reply.code(400).send({ error: TOPIC_RULE });
     }
 
     let priority: number;
@@ -78,6 +78,8 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
 
     return reply.code(200).send(message);
   });
+
+  registerStreamRoute(app, broker);
 
   // The subscribe route lives inside a plugin scope so that it is registered after
   // `@fastify/websocket` has loaded and can claim it as an upgrade route.
