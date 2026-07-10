@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { WebSocket } from 'ws';
-import { buildApp } from '../src/app.js';
 import { Broker } from '../src/broker.js';
 import { MAX_SUBSCRIBE_TOPICS, SINCE_RULE, TOPIC_LIST_RULE } from '../src/message.js';
 import type { Message } from '../src/message.js';
+import type { TokenStore } from '../src/tokens.js';
+import { bearer, buildTestApp } from './helpers.js';
 
 describe('GET /:topic/ws', () => {
   let app: FastifyInstance;
@@ -12,10 +13,12 @@ describe('GET /:topic/ws', () => {
   let httpBase: string;
   let wsBase: string;
   let sockets: WebSocket[];
+  let tokens: TokenStore;
+  let token: string;
 
   beforeEach(async () => {
     broker = new Broker();
-    app = buildApp({ broker });
+    ({ app, tokens, token } = buildTestApp({ broker }));
     sockets = [];
 
     // A real socket on an ephemeral port: `app.inject` cannot perform an upgrade,
@@ -27,7 +30,15 @@ describe('GET /:topic/ws', () => {
   afterEach(async () => {
     for (const socket of sockets) socket.close();
     await app.close();
+    tokens.close();
   });
+
+  /** Open a subscriber socket, authenticated the way a WebSocket client has to be. */
+  function open(path: string): WebSocket {
+    const socket = new WebSocket(`${wsBase}/${path}`, { headers: bearer(token) });
+    sockets.push(socket);
+    return socket;
+  }
 
   /**
    * Open a subscriber on one topic, or on a comma-separated list of them, and resolve
@@ -38,8 +49,7 @@ describe('GET /:topic/ws', () => {
     // seeing it on the first proves it landed on all of them.
     const [first] = topicList.split(',');
     const before = broker.listenerCount(first);
-    const socket = new WebSocket(`${wsBase}/${topicList}/ws`);
-    sockets.push(socket);
+    const socket = open(`${topicList}/ws`);
 
     await new Promise<void>((resolve, reject) => {
       socket.once('open', () => resolve());
@@ -85,7 +95,7 @@ describe('GET /:topic/ws', () => {
   function publish(topic: string, body: string, headers: Record<string, string> = {}) {
     return fetch(`${httpBase}/${topic}`, {
       method: 'POST',
-      headers: { 'content-type': 'text/plain', ...headers },
+      headers: { ...bearer(token), 'content-type': 'text/plain', ...headers },
       body,
     });
   }
@@ -112,8 +122,7 @@ describe('GET /:topic/ws', () => {
     const [first] = path.split('/')[0].split(',');
     const before = broker.listenerCount(first);
 
-    const socket = new WebSocket(`${wsBase}/${path}`);
-    sockets.push(socket);
+    const socket = open(path);
 
     const frames: Message[] = [];
     socket.on('message', (data) => frames.push(JSON.parse(data.toString()) as Message));
@@ -233,8 +242,7 @@ describe('GET /:topic/ws', () => {
   it.each(['bad.topic', 'bad topic', 'a'.repeat(65), 'healthz'])(
     'closes a subscription to invalid topic %j with 1008',
     async (topic) => {
-      const socket = new WebSocket(`${wsBase}/${encodeURIComponent(topic)}/ws`);
-      sockets.push(socket);
+      const socket = open(`${encodeURIComponent(topic)}/ws`);
 
       const { code, reason } = await closeEvent(socket);
 
@@ -331,8 +339,7 @@ describe('GET /:topic/ws', () => {
     it.each(['yesterday', '-1', '1.5', ''])(
       'closes a subscription with since=%j with 1008',
       async (since) => {
-        const socket = new WebSocket(`${wsBase}/alpha/ws?since=${encodeURIComponent(since)}`);
-        sockets.push(socket);
+        const socket = open(`alpha/ws?since=${encodeURIComponent(since)}`);
 
         const { code, reason } = await closeEvent(socket);
 
@@ -411,8 +418,7 @@ describe('GET /:topic/ws', () => {
     });
 
     it('closes a list with one bad entry with 1008, subscribing to none of it', async () => {
-      const socket = new WebSocket(`${wsBase}/alpha,bad.topic/ws`);
-      sockets.push(socket);
+      const socket = open('alpha,bad.topic/ws');
 
       const { code, reason } = await closeEvent(socket);
 
@@ -423,8 +429,7 @@ describe('GET /:topic/ws', () => {
 
     it('closes an over-long list with 1008', async () => {
       const names = Array.from({ length: MAX_SUBSCRIBE_TOPICS + 1 }, (_, i) => `topic${i}`);
-      const socket = new WebSocket(`${wsBase}/${names.join(',')}/ws`);
-      sockets.push(socket);
+      const socket = open(`${names.join(',')}/ws`);
 
       const { code, reason } = await closeEvent(socket);
 

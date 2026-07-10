@@ -4,6 +4,7 @@ import { buildApp } from '../src/app.js';
 import type { Message } from '../src/message.js';
 import { RETENTION_HOURS, parseRetentionHours } from '../src/retention.js';
 import { MessageStore } from '../src/store.js';
+import { bearer, buildTestApp } from './helpers.js';
 
 /**
  * Short enough that a test finishes in milliseconds, long enough that a slow machine
@@ -153,7 +154,11 @@ describe('retention sweep', () => {
 describe('retention and replay', () => {
   it('does not replay a message the sweep has removed', async () => {
     const store = new MessageStore();
-    const app = buildApp({ store, retentionHours: 1, retentionSweepIntervalMs: SWEEP_INTERVAL_MS });
+    const { app, tokens, token } = buildTestApp({
+      store,
+      retentionHours: 1,
+      retentionSweepIntervalMs: SWEEP_INTERVAL_MS,
+    });
     const controller = new AbortController();
 
     store.append({ ...message(2 * HOUR_SECONDS), message: 'expired' });
@@ -164,6 +169,7 @@ describe('retention and replay', () => {
       const httpBase = await app.listen({ port: 0, host: '127.0.0.1' });
 
       const response = await fetch(`${httpBase}/mytopic/json?since=0`, {
+        headers: bearer(token),
         signal: controller.signal,
       });
       expect(response.status).toBe(200);
@@ -176,6 +182,7 @@ describe('retention and replay', () => {
       controller.abort();
       await app.close();
       store.close();
+      tokens.close();
     }
   });
 });

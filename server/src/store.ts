@@ -1,8 +1,6 @@
-import Database from 'better-sqlite3';
+import type Database from 'better-sqlite3';
+import { IN_MEMORY, openDatabase } from './db.js';
 import type { Message } from './message.js';
-
-/** Open a database that lives only as long as the process. */
-export const IN_MEMORY = ':memory:';
 
 /**
  * One row of the `messages` table. SQLite has no boolean, array or null-vs-undefined
@@ -80,16 +78,7 @@ export class MessageStore {
    * scatter files across a working directory.
    */
   constructor(path: string = IN_MEMORY) {
-    this.#db = new Database(path);
-
-    // A reader replaying its backlog must not block the publish that is writing the
-    // next message, and vice versa.
-    this.#db.pragma('journal_mode = WAL');
-    // Fsync at checkpoints rather than on every commit. In WAL mode this can only lose
-    // the tail of the last second if the machine loses power — never corrupt the file —
-    // which is the right trade for notifications.
-    this.#db.pragma('synchronous = NORMAL');
-
+    this.#db = openDatabase(path);
     this.#db.exec(SCHEMA);
 
     this.#append = this.#db.prepare(

@@ -36,17 +36,25 @@ before the Android client is built against it.
       and hourly after. The window bounds both the database and how far `?since=` can
       replay. A `RETENTION_HOURS` that is not a whole number of hours refuses to start,
       rather than silently expiring nothing.
+- [x] Bearer-token auth on **both** publish and subscribe (`Authorization: Bearer …`, or
+      `?auth=` on the subscribe routes, which is the only way a browser can authenticate
+      a WebSocket). Publish takes the header only, since a query string is what proxies
+      and access logs write down. `/healthz` stays open. A server whose database holds no
+      tokens authorizes nobody.
+- [x] `tokens` table in SQLite, storing only a SHA-256 of each token; a
+      `pnpm token:create <name>` CLI mints them and prints each one once.
 
 ## Server (v0.1)
 
 The self-hostable pub/sub core.
 
 ### Auth & safety
-- [ ] Bearer-token auth on **both** publish and subscribe (`Authorization: Bearer …`,
-      or `?auth=` query param for WebSocket clients).
-- [ ] `tokens` table in SQLite; a `pnpm token:create <name>` CLI mints tokens.
 - [ ] Rate limit: 60 requests/min per token on publish.
-- [ ] Reject payloads larger than 4 KB.
+- [ ] Reject payloads larger than 4 KB. Until this lands, the body of an unauthorized
+      publish is still read before the token is checked, bounded only by the framework's
+      1 MiB default.
+- [ ] Manage minted tokens: list them, and revoke one without editing the database by
+      hand. Minting is all the CLI can do today.
 
 ### Ops
 - [ ] Graceful shutdown on `SIGTERM`/`SIGINT`: stop accepting, end the open subscriber
@@ -60,8 +68,7 @@ The self-hostable pub/sub core.
       Prettier, a `lint` script, and a CI step that runs it.
 - [ ] Structured logging with pino.
 - [ ] Test suite (vitest): publish→subscribe roundtrip, replay-since, auth rejection,
-      rate limit. The roundtrip and replay-since halves exist; auth and rate limit
-      arrive with those features.
+      rate limit. All but the rate limit exist; that half arrives with the feature.
 - [x] CI builds the server and boots the built output (`pnpm smoke`). It ran only
       `typecheck` and `test`, which is why `BUGS.md#1` — the built server cannot start —
       went unnoticed: both `pnpm dev` and the tests resolve imports the built output cannot.
@@ -103,7 +110,8 @@ Native Kotlin client, min SDK 26, Jetpack Compose, no Google Play Services.
 - [ ] Topics screen: subscribed topics with unread badges; FAB to add a topic.
 - [ ] Messages screen: reverse-chronological messages with title/body/tags/time.
 - [ ] Settings screen: server URL, auth token, connection status, battery-exemption
-      status, and a "test notification" button.
+      status, and a "test notification" button. The token goes on every subscribe, as
+      `Authorization: Bearer …` on the WebSocket handshake.
 - [ ] Persist topics and messages in Room; cap 500 messages per topic locally.
 
 ### Build & distribution

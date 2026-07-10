@@ -1,7 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
-import { buildApp } from '../src/app.js';
 import { Broker } from '../src/broker.js';
 import {
   MAX_SUBSCRIBE_TOPICS,
@@ -10,6 +9,8 @@ import {
   TOPIC_LIST_RULE,
 } from '../src/message.js';
 import type { Message } from '../src/message.js';
+import type { TokenStore } from '../src/tokens.js';
+import { bearer, buildTestApp } from './helpers.js';
 
 describe('GET /:topic/json', () => {
   let app: FastifyInstance;
@@ -17,10 +18,12 @@ describe('GET /:topic/json', () => {
   let httpBase: string;
   let controllers: AbortController[];
   let closed: boolean;
+  let tokens: TokenStore;
+  let token: string;
 
   beforeEach(async () => {
     broker = new Broker();
-    app = buildApp({ broker });
+    ({ app, tokens, token } = buildTestApp({ broker }));
     controllers = [];
     closed = false;
 
@@ -32,7 +35,13 @@ describe('GET /:topic/json', () => {
   afterEach(async () => {
     for (const controller of controllers) controller.abort();
     await closeApp();
+    tokens.close();
   });
+
+  /** GET an authenticated stream, the way any HTTP subscriber has to. */
+  function subscribe(path: string, init: RequestInit = {}): Promise<Response> {
+    return fetch(`${httpBase}/${path}`, { ...init, headers: bearer(token) });
+  }
 
   async function closeApp(): Promise<void> {
     if (closed) return;
@@ -77,7 +86,7 @@ describe('GET /:topic/json', () => {
     controllers.push(controller);
 
     // Resolves as soon as the headers are flushed; the body arrives line by line.
-    const response = await fetch(`${httpBase}/${topicList}/json${query}`, {
+    const response = await subscribe(`${topicList}/json${query}`, {
       signal: controller.signal,
     });
 
@@ -89,7 +98,7 @@ describe('GET /:topic/json', () => {
   function publish(topic: string, body: string, headers: Record<string, string> = {}) {
     return fetch(`${httpBase}/${topic}`, {
       method: 'POST',
-      headers: { 'content-type': 'text/plain', ...headers },
+      headers: { ...bearer(token), 'content-type': 'text/plain', ...headers },
       body,
     });
   }
@@ -162,7 +171,9 @@ describe('GET /:topic/json', () => {
   });
 
   it('carries the same message a WebSocket subscriber receives', async () => {
-    const socket = new WebSocket(`${httpBase.replace(/^http/, 'ws')}/alpha/ws`);
+    const socket = new WebSocket(`${httpBase.replace(/^http/, 'ws')}/alpha/ws`, {
+      headers: bearer(token),
+    });
     await new Promise<void>((resolve, reject) => {
       socket.once('open', () => resolve());
       socket.once('error', reject);
@@ -220,7 +231,7 @@ describe('GET /:topic/json', () => {
   it.each(['bad.topic', 'bad topic', 'a'.repeat(65), 'healthz'])(
     'rejects a stream of invalid topic %j with 400',
     async (topic) => {
-      const response = await fetch(`${httpBase}/${encodeURIComponent(topic)}/json`);
+      const response = await subscribe(`${encodeURIComponent(topic)}/json`);
 
       expect(response.status).toBe(400);
       expect(((await response.json()) as { error: string }).error).toMatch(/^topic must be/);
@@ -284,6 +295,7 @@ describe('GET /:topic/json', () => {
       const stream = lines(await open('alpha', `?since=${missed.timestamp}`));
       const socket = new WebSocket(
         `${httpBase.replace(/^http/, 'ws')}/alpha/ws?since=${missed.timestamp}`,
+        { headers: bearer(token) },
       );
       const frame = new Promise<Message>((resolve, reject) => {
         socket.once('message', (data) => resolve(JSON.parse(data.toString()) as Message));
@@ -297,7 +309,7 @@ describe('GET /:topic/json', () => {
     it.each(['yesterday', '-1', '1.5', ''])(
       'rejects a stream with since=%j with 400',
       async (since) => {
-        const response = await fetch(`${httpBase}/alpha/json?since=${encodeURIComponent(since)}`);
+        const response = await subscribe(`alpha/json?since=${encodeURIComponent(since)}`);
 
         expect(response.status).toBe(400);
         expect(((await response.json()) as { error: string }).error).toBe(SINCE_RULE);
@@ -359,7 +371,7 @@ describe('GET /:topic/json', () => {
     });
 
     it('rejects a list with one bad entry, subscribing to none of it', async () => {
-      const response = await fetch(`${httpBase}/alpha,bad.topic/json`);
+      const response = await subscribe('alpha,bad.topic/json');
 
       expect(response.status).toBe(400);
       expect(((await response.json()) as { error: string }).error).toMatch(/^topic must be/);
@@ -369,7 +381,7 @@ describe('GET /:topic/json', () => {
     it('rejects an over-long list with 400', async () => {
       const names = Array.from({ length: MAX_SUBSCRIBE_TOPICS + 1 }, (_, i) => `topic${i}`);
 
-      const response = await fetch(`${httpBase}/${names.join(',')}/json`);
+      const response = await subscribe(`${names.join(',')}/json`);
 
       expect(response.status).toBe(400);
       expect(((await response.json()) as { error: string }).error).toBe(TOPIC_LIST_RULE);

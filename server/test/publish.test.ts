@@ -1,25 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { buildApp } from '../src/app.js';
 import { Broker } from '../src/broker.js';
 import type { Message } from '../src/message.js';
 import { MessageStore } from '../src/store.js';
+import type { TokenStore } from '../src/tokens.js';
+import { bearer, buildTestApp } from './helpers.js';
 
 describe('POST /:topic', () => {
   let app: FastifyInstance;
   let broker: Broker;
   let store: MessageStore;
+  let tokens: TokenStore;
+  let token: string;
 
   beforeEach(async () => {
     broker = new Broker();
     store = new MessageStore();
-    app = buildApp({ broker, store });
+    ({ app, tokens, token } = buildTestApp({ broker, store }));
     await app.ready();
   });
 
   afterEach(async () => {
     await app.close();
     store.close();
+    tokens.close();
   });
 
   it('accepts a bare text body and echoes the stored message', async () => {
@@ -28,7 +32,7 @@ describe('POST /:topic', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/mytopic',
-      headers: { 'content-type': 'text/plain' },
+      headers: { ...bearer(token), 'content-type': 'text/plain' },
       payload: 'hello',
     });
 
@@ -48,7 +52,7 @@ describe('POST /:topic', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/mytopic',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      headers: { ...bearer(token), 'content-type': 'application/x-www-form-urlencoded' },
       payload: 'hello',
     });
 
@@ -57,7 +61,12 @@ describe('POST /:topic', () => {
   });
 
   it('accepts a body sent with no content type at all', async () => {
-    const res = await app.inject({ method: 'POST', url: '/mytopic', payload: 'hello' });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/mytopic',
+      headers: bearer(token),
+      payload: 'hello',
+    });
 
     expect(res.statusCode).toBe(200);
     expect((res.json() as Message).message).toBe('hello');
@@ -67,7 +76,7 @@ describe('POST /:topic', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/mytopic',
-      headers: { 'content-type': 'application/json' },
+      headers: { ...bearer(token), 'content-type': 'application/json' },
       payload: '{"deploy":"done"}',
     });
 
@@ -80,6 +89,7 @@ describe('POST /:topic', () => {
       method: 'POST',
       url: '/mytopic',
       headers: {
+        ...bearer(token),
         'content-type': 'text/plain',
         'x-title': 'Deploy finished',
         'x-priority': '5',
@@ -100,7 +110,7 @@ describe('POST /:topic', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/mytopic',
-      headers: { 'content-type': 'text/plain', 'x-title': '   ' },
+      headers: { ...bearer(token), 'content-type': 'text/plain', 'x-title': '   ' },
       payload: 'hello',
     });
 
@@ -115,7 +125,7 @@ describe('POST /:topic', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/mytopic',
-      headers: { 'content-type': 'text/plain' },
+      headers: { ...bearer(token), 'content-type': 'text/plain' },
       payload: 'hello',
     });
 
@@ -128,6 +138,7 @@ describe('POST /:topic', () => {
       method: 'POST',
       url: '/mytopic',
       headers: {
+        ...bearer(token),
         'content-type': 'text/plain',
         'x-title': 'Deploy finished',
         'x-priority': '5',
@@ -151,7 +162,7 @@ describe('POST /:topic', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/mytopic',
-      headers: { 'content-type': 'text/plain' },
+      headers: { ...bearer(token), 'content-type': 'text/plain' },
       payload: 'hello',
     });
 
@@ -162,7 +173,7 @@ describe('POST /:topic', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/mytopic',
-      headers: { 'content-type': 'text/plain', 'x-priority': '9' },
+      headers: { ...bearer(token), 'content-type': 'text/plain', 'x-priority': '9' },
       payload: 'hello',
     });
 
@@ -175,7 +186,7 @@ describe('POST /:topic', () => {
       app.inject({
         method: 'POST',
         url: '/mytopic',
-        headers: { 'content-type': 'text/plain' },
+        headers: { ...bearer(token), 'content-type': 'text/plain' },
         payload: 'hello',
       });
 
@@ -191,7 +202,7 @@ describe('POST /:topic', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/mytopic',
-      headers: { 'content-type': 'text/plain', ...headers },
+      headers: { ...bearer(token), 'content-type': 'text/plain', ...headers },
       payload,
     });
 
@@ -202,7 +213,7 @@ describe('POST /:topic', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/mytopic',
-      headers: { 'content-type': 'text/plain', 'x-title': 'Ping' },
+      headers: { ...bearer(token), 'content-type': 'text/plain', 'x-title': 'Ping' },
       payload: '',
     });
 
@@ -219,7 +230,7 @@ describe('POST /:topic', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/mytopic',
-        headers: { 'content-type': 'text/plain', 'x-priority': priority },
+        headers: { ...bearer(token), 'content-type': 'text/plain', 'x-priority': priority },
         payload: 'hello',
       });
 
@@ -231,7 +242,7 @@ describe('POST /:topic', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/mytopic',
-      headers: { 'content-type': 'text/plain', 'x-priority': priority },
+      headers: { ...bearer(token), 'content-type': 'text/plain', 'x-priority': priority },
       payload: 'hello',
     });
 
@@ -245,7 +256,7 @@ describe('POST /:topic', () => {
       const res = await app.inject({
         method: 'POST',
         url: `/${encodeURIComponent(topic)}`,
-        headers: { 'content-type': 'text/plain' },
+        headers: { ...bearer(token), 'content-type': 'text/plain' },
         payload: 'hello',
       });
 
@@ -260,7 +271,7 @@ describe('POST /:topic', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/mytopic',
-      headers: { 'content-type': 'text/plain', 'x-priority': '9' },
+      headers: { ...bearer(token), 'content-type': 'text/plain', 'x-priority': '9' },
       payload: 'hello',
     });
 

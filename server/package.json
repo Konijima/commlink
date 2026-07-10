@@ -12,6 +12,7 @@
     "start": "node dist/server.js",
     "smoke": "node scripts/smoke.mjs",
     "test": "vitest run",
+    "token:create": "tsx src/cli/token-create.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

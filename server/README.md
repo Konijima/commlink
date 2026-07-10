@@ -5,8 +5,8 @@ SQLite. It accepts published messages over HTTP and streams them to subscribed c
 over WebSocket.
 
 > Early development. Publishing, both subscribe routes, the message cache, `?since=`
-> replay and retention are live. Auth is still being built — see
-> [`../TODO.md`](../TODO.md).
+> replay, retention and bearer-token auth are live. Rate limiting and a payload size
+> cap are still being built — see [`../TODO.md`](../TODO.md).
 
 ## Requirements
 
@@ -20,11 +20,12 @@ compiled during install, which needs a C++ toolchain.
 
 ```bash
 pnpm install
-pnpm test          # vitest
-pnpm typecheck     # tsc --noEmit
-pnpm dev           # start on http://127.0.0.1:4500
-pnpm build         # compile to dist/
-pnpm smoke         # boot the compiled server and check /healthz
+pnpm test              # vitest
+pnpm typecheck         # tsc --noEmit
+pnpm token:create me   # mint a token to publish and subscribe with
+pnpm dev               # start on http://127.0.0.1:4500
+pnpm build             # compile to dist/
+pnpm smoke             # boot the compiled server and check /healthz
 ```
 
 `pnpm start` runs the compiled server from `dist/`, which is what a service unit should
@@ -36,13 +37,54 @@ curl http://127.0.0.1:4500/healthz
 # {"status":"ok","uptime":12.34}
 ```
 
+## Authentication
+
+Every route but `/healthz` needs a bearer token, and a server whose database holds no
+tokens authorizes nobody. So the first thing to do with a fresh install is mint one:
+
+```bash
+pnpm token:create pixel
+# Token "pixel" created in ./commlink.sqlite. It is shown once:
+# 5PjK…                                    <- the token, alone on stdout
+# Store it now; only its hash was written down.
+```
+
+The name is a label for you — `pixel`, `laptop`, `ci` — and each name may be used once.
+Only a SHA-256 of the token is stored, so a lost token is replaced rather than
+recovered, and a stolen database yields nothing that can be presented back to the
+server. Tokens live in the same database as the messages, so `token:create` and the
+server must be pointed at the same `DB_PATH`.
+
+Publishers and `/json` subscribers send the token as a header:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" -d "hello" http://127.0.0.1:4500/mytopic
+```
+
+A browser cannot set a header on a WebSocket handshake, so both subscribe routes also
+take the token as `?auth=`:
+
+```bash
+websocat "ws://127.0.0.1:4500/mytopic/ws?auth=$TOKEN"
+```
+
+Publishing does not take `?auth=`. A query string is the part of a URL that proxies and
+access logs write down, and a publisher is a program that can always set a header.
+
+A request with no token, an unreadable one, or one that was never issued is answered
+with `401` and a `WWW-Authenticate: Bearer` challenge; the three are not told apart. On
+`/:topic/ws` that `401` refuses the handshake, so no socket is ever opened.
+
+`/healthz` is the exception, because a liveness probe runs where a secret should not
+have to: a service manager, an uptime checker, a container orchestrator.
+
 ## Publishing
 
 Anything you `POST` to `/:topic` becomes a message on that topic. The request body is
 the message text, taken verbatim — a JSON body is not reshaped.
 
 ```bash
-curl -d "hello" http://127.0.0.1:4500/mytopic
+curl -H "Authorization: Bearer $TOKEN" -d "hello" http://127.0.0.1:4500/mytopic
 # {"id":"…","topic":"mytopic","title":null,"message":"hello","priority":3,"tags":[],"timestamp":1700000000}
 ```
 
@@ -55,7 +97,8 @@ Metadata travels in optional headers:
 | `X-Tags`     | none    | Comma-separated tags; surrounding space is ignored.       |
 
 ```bash
-curl -H "X-Title: Deploy finished" -H "X-Priority: 5" -H "X-Tags: ci,deploy" \
+curl -H "Authorization: Bearer $TOKEN" \
+     -H "X-Title: Deploy finished" -H "X-Priority: 5" -H "X-Tags: ci,deploy" \
      -d "shipped" http://127.0.0.1:4500/mytopic
 ```
 
@@ -91,7 +134,7 @@ Name the topics separated by commas to receive all of them on a single socket:
 
 ```bash
 # one connection, three topics
-websocat ws://127.0.0.1:4500/deploys,alerts,backups/ws
+websocat "ws://127.0.0.1:4500/deploys,alerts,backups/ws?auth=$TOKEN"
 ```
 
 Every frame carries its own `topic`, which is how a client tells the streams apart. A
@@ -106,7 +149,7 @@ message per line, written as it is published. The response stays open until the 
 disconnects, so any HTTP client can subscribe:
 
 ```bash
-curl -sN http://127.0.0.1:4500/mytopic/json
+curl -sN -H "Authorization: Bearer $TOKEN" http://127.0.0.1:4500/mytopic/json
 # {"id":"…","topic":"mytopic","title":null,"message":"hello","priority":3,"tags":[],"timestamp":1700000000}
 # {"id":"…","topic":"mytopic","title":null,"message":"there","priority":3,"tags":[],"timestamp":1700000005}
 ```
@@ -116,7 +159,7 @@ stream ends. The stream honours `?since=` and multiplexes over a comma-separated
 exactly as the socket does:
 
 ```bash
-curl -sN http://127.0.0.1:4500/deploys,alerts/json
+curl -sN -H "Authorization: Bearer $TOKEN" http://127.0.0.1:4500/deploys,alerts/json
 ```
 
 An invalid or over-long topic list is rejected with `400` before the stream opens.
@@ -129,10 +172,11 @@ is sent first, oldest first, and the live stream follows without a gap:
 
 ```bash
 # everything on `deploys` since a given second, then whatever comes next
-curl -sN "http://127.0.0.1:4500/deploys/json?since=1700000000"
+curl -sN -H "Authorization: Bearer $TOKEN" \
+     "http://127.0.0.1:4500/deploys/json?since=1700000000"
 
 # the whole retained backlog
-curl -sN "http://127.0.0.1:4500/deploys/json?since=0"
+curl -sN -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:4500/deploys/json?since=0"
 ```
 
 A client that reconnects passes the `timestamp` of the last message it saw, and misses
@@ -209,7 +253,7 @@ set the variables in the shell or in your service manager (see
 | ----------------- | -------------------- | ---------------------------------- | ---------- |
 | `PORT`            | `4500`               | Port to listen on.                 | Read now   |
 | `HOST`            | `127.0.0.1`          | Interface to bind.                 | Read now   |
-| `DB_PATH`         | `./commlink.sqlite`  | SQLite database file.              | Read now   |
+| `DB_PATH`         | `./commlink.sqlite`  | SQLite database: messages, tokens. | Read now   |
 | `RETENTION_HOURS` | `72`                 | How long cached messages are kept. | Read now   |
 
 `RETENTION_HOURS` must be a whole number of hours, at least `1`. The server refuses to
@@ -220,13 +264,14 @@ see [`../deploy/`](../deploy/).
 
 ## API
 
-| Method | Path                     | Purpose                                            |
-| ------ | ------------------------ | -------------------------------------------------- |
-| `GET`  | `/healthz`               | Liveness probe (200 + uptime). **Available now.**  |
-| `POST` | `/:topic`                | Publish a message to a topic. **Available now.**   |
-| `GET`  | `/:topics/ws`            | Subscribe over WebSocket. **Available now.**       |
-| `GET`  | `/:topics/json`          | Subscribe over plain HTTP. **Available now.**      |
+| Method | Path            | Auth            | Purpose                        |
+| ------ | --------------- | --------------- | ------------------------------ |
+| `GET`  | `/healthz`      | none            | Liveness probe (200 + uptime). |
+| `POST` | `/:topic`       | header          | Publish a message to a topic.  |
+| `GET`  | `/:topics/ws`   | header, `?auth=` | Subscribe over WebSocket.     |
+| `GET`  | `/:topics/json` | header, `?auth=` | Subscribe over plain HTTP.    |
 
-Both subscribe routes take one topic or a comma-separated list of them, and both accept
-`?since=<unix_ts>` to replay the cache before streaming live messages. No endpoint
-requires a bearer token yet.
+All four are available now. Both subscribe routes take one topic or a comma-separated
+list of them, and both accept `?since=<unix_ts>` to replay the cache before streaming
+live messages. "header" is `Authorization: Bearer <token>`; see
+[Authentication](#authentication).
