@@ -133,8 +133,10 @@ The self-hostable pub/sub core.
       `0x10`, a non-number and blank. A valid window paired with a bad `LOG_LEVEL` proves
       the retention gate lets a good value through rather than refusing everything, and the
       refusals all exit before a port is bound.
-- [ ] Test on the Node.js versions the docs promise. The READMEs say Node 20+, CI runs
-      Node 22 only.
+- [x] Test on the Node.js versions the docs promise. The READMEs say Node 20+, so CI now
+      runs the full suite (typecheck, lint, test, build, boot) on a matrix of Node 20, 22
+      and 24 — the promised floor, the previous LTS, and the current one — rather than 22
+      alone. `fail-fast` is off so one version's failure cannot mask another's.
 - [ ] `deploy/`: a systemd unit and a TLS reverse-proxy (Caddy) snippet. Both files
       exist and the built server now starts (`BUGS.md#1`), but the unit stays unchecked
       until it has been run end-to-end.

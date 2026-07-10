@@ -12,9 +12,17 @@ concurrency:
 
 jobs:
   verify:
-    name: verify
+    name: verify (node ${{ matrix.node }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
+    strategy:
+      # Run every version to completion; one failure should not mask another.
+      fail-fast: false
+      matrix:
+        # The docs promise Node.js 20+, so test the floor, the previous LTS,
+        # and the current LTS rather than a single version.
+        node: [20, 22, 24]
 
     steps:
       - uses: actions/checkout@v4
@@ -23,7 +31,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
           cache: pnpm
 
       - name: Install dependencies
