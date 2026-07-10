@@ -7,6 +7,7 @@ import {
   TOPIC_LIST_RULE,
   parseSince,
   parseTopicList,
+  reservedTopicRule,
 } from '../src/message.js';
 
 /**
@@ -55,12 +56,19 @@ describe('parseTopicList', () => {
     expect(() => parseTopicList(names.join(','))).toThrow(TOPIC_LIST_RULE);
   });
 
-  it.each(['bad.topic', 'bad topic', 'a'.repeat(65), 'healthz', ''])(
-    'rejects %j as a topic name',
+  it.each(['bad.topic', 'bad topic', 'a'.repeat(65), ''])(
+    'rejects %j with the alphabet rule',
     (name) => {
       expect(() => parseTopicList(name)).toThrow(/^topic must be/);
     },
   );
+
+  it('refuses a reserved name by naming it, not the alphabet it keeps', () => {
+    // `healthz` is a legal topic name — it is refused only because the server serves
+    // `/healthz` itself, so the reason has to say so rather than cite the alphabet.
+    expect(() => parseTopicList('healthz')).toThrow(reservedTopicRule('healthz'));
+    expect(() => parseTopicList('healthz')).not.toThrow(/^topic must be/);
+  });
 
   it.each(['alpha,', ',alpha', 'alpha,,beta'])('rejects the empty entry in %j', (raw) => {
     expect(() => parseTopicList(raw)).toThrow(/^topic must be/);

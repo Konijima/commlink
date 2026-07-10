@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { WebSocket } from 'ws';
 import { Broker } from '../src/broker.js';
-import { MAX_SUBSCRIBE_TOPICS, SINCE_RULE, TOPIC_LIST_RULE } from '../src/message.js';
+import {
+  MAX_SUBSCRIBE_TOPICS,
+  SINCE_RULE,
+  TOPIC_LIST_RULE,
+  reservedTopicRule,
+} from '../src/message.js';
 import type { Message } from '../src/message.js';
 import type { TokenStore } from '../src/tokens.js';
 import { bearer, buildTestApp } from './helpers.js';
@@ -241,7 +246,7 @@ describe('GET /:topic/ws', () => {
     await vi.waitFor(() => expect(broker.listenerCount('alpha')).toBe(0));
   });
 
-  it.each(['bad.topic', 'bad topic', 'a'.repeat(65), 'healthz'])(
+  it.each(['bad.topic', 'bad topic', 'a'.repeat(65)])(
     'closes a subscription to invalid topic %j with 1008',
     async (topic) => {
       const socket = open(`${encodeURIComponent(topic)}/ws`);
@@ -253,6 +258,16 @@ describe('GET /:topic/ws', () => {
       expect(broker.listenerCount(topic)).toBe(0);
     },
   );
+
+  it('closes a subscription to a reserved name naming it, not the alphabet', async () => {
+    const socket = open('healthz/ws');
+
+    const { code, reason } = await closeEvent(socket);
+
+    expect(code).toBe(1008);
+    expect(reason).toBe(reservedTopicRule('healthz'));
+    expect(broker.listenerCount('healthz')).toBe(0);
+  });
 
   describe('?since= replay', () => {
     it('replays a message published before the socket connected', async () => {
