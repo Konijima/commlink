@@ -12,14 +12,15 @@ before the Android client is built against it.
       `X-Title`, `X-Priority` (1–5, default 3), `X-Tags` (comma-separated). Works
       with a bare `curl -d "hello" https://server/mytopic`. Messages fan out to live
       subscribers through an in-memory broker.
+- [x] `GET /:topic/ws` — upgrade to WebSocket and push each new message as a JSON frame
+      `{ id, topic, title, message, priority, tags, timestamp }`. Live-only for now;
+      an invalid topic closes the socket with `1008`.
 
 ## Server (v0.1)
 
 The self-hostable pub/sub core.
 
 ### Publish & subscribe
-- [ ] `GET /:topic/ws` — upgrade to WebSocket and push each new message as a JSON frame
-      `{ id, topic, title, message, priority, tags, timestamp }`.
 - [ ] `GET /:topic/json` — HTTP long-poll / SSE fallback for the same stream.
 - [ ] Multiplexed subscribe: `GET /:topic1,topic2,topic3/ws` over one connection.
 - [ ] Keepalive: server ping every 45s; drop dead connections.
