@@ -22,6 +22,10 @@ systemctl --user daemon-reload
 systemctl --user enable --now commlink-server.service
 ```
 
+The unit points `DB_PATH` at a state directory outside the checkout. `DB_PATH` is
+resolved relative to `WorkingDirectory`, so a unit that leaves it unset writes the
+message database into the source tree — where a redeploy can wipe it.
+
 ## TLS
 
 Point any reverse proxy that terminates TLS at `http://127.0.0.1:4500`. The included
