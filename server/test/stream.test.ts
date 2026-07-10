@@ -7,6 +7,7 @@ import {
   MAX_TOPIC_LENGTH,
   SINCE_RULE,
   TOPIC_LIST_RULE,
+  reservedTopicRule,
 } from '../src/message.js';
 import type { Message } from '../src/message.js';
 import type { TokenStore } from '../src/tokens.js';
@@ -228,7 +229,7 @@ describe('GET /:topic/json', () => {
     await vi.waitFor(() => expect(broker.listenerCount('alpha')).toBe(0));
   });
 
-  it.each(['bad.topic', 'bad topic', 'a'.repeat(65), 'healthz'])(
+  it.each(['bad.topic', 'bad topic', 'a'.repeat(65)])(
     'rejects a stream of invalid topic %j with 400',
     async (topic) => {
       const response = await subscribe(`${encodeURIComponent(topic)}/json`);
@@ -240,6 +241,16 @@ describe('GET /:topic/json', () => {
       expect(broker.listenerCount(topic)).toBe(0);
     },
   );
+
+  it('rejects a stream of a reserved name by naming it, not the alphabet', async () => {
+    const response = await subscribe('healthz/json');
+
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { error: string }).error).toBe(
+      reservedTopicRule('healthz'),
+    );
+    expect(broker.listenerCount('healthz')).toBe(0);
+  });
 
   describe('?since= replay', () => {
     it('replays a message published before the stream opened', async () => {

@@ -71,7 +71,7 @@ rather than before fails the fill with `delivering message 1 dropped the reader`
 was then run many times over, including batches launched at once to oversubscribe every
 core, all green.
 
-### 3 — a reserved topic is refused with the wrong reason   [open]   severity: low
+### 3 — a reserved topic is refused with the wrong reason   [fixed]   severity: low
 Repro: subscribe to the one topic name the server keeps for itself.
 
 ```
@@ -80,14 +80,23 @@ HTTP/1.1 400 Bad Request
 {"error":"topic must be 1-64 characters of A-Z, a-z, 0-9, hyphen or underscore"}
 ```
 
-Notes: `healthz` *is* 1–64 characters of that alphabet, so the message describes a rule the
+Notes: `healthz` *is* 1–64 characters of that alphabet, so the message described a rule the
 request did not break. It is refused because the server serves `/healthz` itself and a topic
-by that name would collide with it — which is a fair refusal, and one the client is never
-told about. Any name added to the reserved set later inherits the same confusion.
+by that name would collide with it — which is a fair refusal, and one the client was never
+told about. Any name added to the reserved set later inherited the same confusion.
 
-The fix is a distinct message for a reserved name, not a wider alphabet. Low severity: one
-name, and only a client that picked it. Worth doing when the refusal messages are next
-touched.
+Fixed by splitting the two refusals. Topic validation now returns *why* a name is refused
+rather than a bare boolean: a name outside the alphabet or length still gets the alphabet
+rule, but a name inside it that the server reserves for itself gets a distinct message that
+names it — `topic "healthz" is reserved by the server`. The reason flows through the publish
+route (`400`), the `/json` stream (`400`) and the `/ws` upgrade (close `1008`) alike, so the
+same distinction reaches a client however it asked. The alphabet is checked first, so an
+over-long name never reaches — and never gets echoed by — the reserved message, and any name
+added to the reserved set later inherits the honest reason for free.
+
+Verified against the running built server: `POST /healthz` and `GET /healthz/json` both
+return the reserved message, `POST /bad.topic` still returns the alphabet rule, and
+`POST /mytopic` still publishes.
 
 ### 2 — a non-ASCII title is stored and delivered as mojibake   [fixed]   severity: medium
 Repro: publish a title with an accent, then read the message back.

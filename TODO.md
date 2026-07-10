@@ -67,6 +67,13 @@ before the Android client is built against it.
       delivered as it was sent. The headers carry raw UTF-8 bytes — no RFC 2047 encoding —
       and bytes that are not UTF-8 are rejected with `400` naming the rule. The byte limits
       are unchanged, since decoding is lossless.
+- [x] Refuse a reserved topic name with its own reason (`BUGS.md#3`). `healthz` satisfies the
+      topic alphabet but collides with the path the server serves itself, and used to be
+      refused with the alphabet rule — a rule it does not break. Topic validation now reports
+      *why* a name is refused, so a reserved name is named as reserved on publish (`400`), on
+      the `/json` stream (`400`) and on the `/ws` upgrade (close `1008`) alike, while a
+      bad-alphabet name still cites the alphabet. The alphabet is checked first, so an
+      over-long name never reaches the reserved message.
 
 ## Server (v0.1)
 

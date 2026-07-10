@@ -9,14 +9,13 @@ import { Broker } from './broker.js';
 import {
   MAX_BODY_BYTES,
   MAX_TOPIC_LIST_LENGTH,
-  TOPIC_RULE,
   bodyRule,
   createMessage,
   headerValue,
-  isValidTopic,
   parsePriority,
   parseTags,
   parseTitle,
+  topicRefusal,
 } from './message.js';
 import { RateLimiter, publishRateLimit } from './ratelimit.js';
 import { registerRetention } from './retention.js';
@@ -156,8 +155,9 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     async (request, reply) => {
       const { topic } = request.params;
 
-      if (!isValidTopic(topic)) {
-        return reply.code(400).send({ error: TOPIC_RULE });
+      const refusal = topicRefusal(topic);
+      if (refusal !== null) {
+        return reply.code(400).send({ error: refusal });
       }
 
       // Each of these reports an unusable header by naming the rule it broke. The body

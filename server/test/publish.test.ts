@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { Broker } from '../src/broker.js';
-import type { Message } from '../src/message.js';
+import { type Message, reservedTopicRule } from '../src/message.js';
 import { MessageStore } from '../src/store.js';
 import type { TokenStore } from '../src/tokens.js';
 import { bearer, buildTestApp } from './helpers.js';
@@ -254,7 +254,7 @@ describe('POST /:topic', () => {
     expect((res.json() as Message).priority).toBe(Number(priority));
   });
 
-  it.each(['bad topic', 'bad/topic', 'bad.topic', 'a'.repeat(65), 'healthz'])(
+  it.each(['bad topic', 'bad/topic', 'bad.topic', 'a'.repeat(65)])(
     'rejects topic %j with 400',
     async (topic) => {
       const res = await app.inject({
@@ -267,6 +267,18 @@ describe('POST /:topic', () => {
       expect(res.statusCode).toBe(400);
     },
   );
+
+  it('refuses a publish to a reserved name by naming it, not the alphabet', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/healthz',
+      headers: { ...bearer(token), 'content-type': 'text/plain' },
+      payload: 'hello',
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect((res.json() as { error: string }).error).toBe(reservedTopicRule('healthz'));
+  });
 
   it('does not publish a rejected message to subscribers', async () => {
     const listener = vi.fn();

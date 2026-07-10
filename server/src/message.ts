@@ -24,8 +24,18 @@ const TOPIC_PATTERN = new RegExp(`^[A-Za-z0-9_-]{1,${MAX_TOPIC_LENGTH}}$`);
 /** Paths the server serves itself; they can never be topic names. */
 const RESERVED_TOPICS = new Set(['healthz']);
 
-/** What every route tells a client that named a topic the server will not serve. */
+/** What a route tells a client whose topic name breaks the alphabet or length rule. */
 export const TOPIC_RULE = `topic must be 1-${MAX_TOPIC_LENGTH} characters of A-Z, a-z, 0-9, hyphen or underscore`;
+
+/**
+ * What a route tells a client that named a topic the server keeps for itself — one that
+ * satisfies the alphabet but collides with a path the server serves. It is named as
+ * reserved rather than blamed on the alphabet it does not break, so a client is not told
+ * to fix a rule its name already keeps.
+ */
+export function reservedTopicRule(topic: string): string {
+  return `topic "${topic}" is reserved by the server`;
+}
 
 /**
  * The largest publish body the server will read, in bytes.
@@ -125,8 +135,17 @@ export const TOPIC_LIST_RULE = `subscribe to at most ${MAX_SUBSCRIBE_TOPICS} com
  */
 export const MAX_TOPIC_LIST_LENGTH = MAX_SUBSCRIBE_TOPICS * (MAX_TOPIC_LENGTH + 1) - 1;
 
-export function isValidTopic(topic: string): boolean {
-  return TOPIC_PATTERN.test(topic) && !RESERVED_TOPICS.has(topic);
+/**
+ * Why the server will not accept `topic`, or `null` if it will. A name outside the topic
+ * alphabet or length breaks `TOPIC_RULE`; a name inside it that the server serves itself
+ * is reserved, and told so by `reservedTopicRule` rather than misattributed to the
+ * alphabet. The alphabet is checked first, so an over-long name never reaches — and so
+ * never gets echoed by — the reserved message.
+ */
+export function topicRefusal(topic: string): string | null {
+  if (!TOPIC_PATTERN.test(topic)) return TOPIC_RULE;
+  if (RESERVED_TOPICS.has(topic)) return reservedTopicRule(topic);
+  return null;
 }
 
 /**
@@ -145,8 +164,9 @@ export function parseTopicList(raw: string): string[] {
 
   const topics: string[] = [];
   for (const name of names) {
-    if (!isValidTopic(name)) {
-      throw new RangeError(TOPIC_RULE);
+    const refusal = topicRefusal(name);
+    if (refusal !== null) {
+      throw new RangeError(refusal);
     }
     if (!topics.includes(name)) topics.push(name);
   }
