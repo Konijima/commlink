@@ -2,10 +2,11 @@
 
 The pub/sub push-notification server: Node.js + TypeScript, Fastify, WebSocket, and
 SQLite. It accepts published messages over HTTP and streams them to subscribed clients
-over WebSocket, caching everything so nothing is lost across reconnects.
+over WebSocket.
 
-> Early development. Publishing and WebSocket subscribe are live; the message cache
-> and auth are being built — see [`../TODO.md`](../TODO.md).
+> Early development. Publishing and both subscribe routes are live; the message cache
+> that will make delivery survive reconnects, and auth, are still being built — see
+> [`../TODO.md`](../TODO.md).
 
 ## Requirements
 
@@ -113,15 +114,19 @@ An invalid or over-long topic list is rejected with `400` before the stream open
 
 ## Configuration
 
-Configuration comes from the environment (a local `.env` is loaded in development; see
-[`.env.example`](./.env.example)):
+Configuration comes from the process environment. A `.env` file is **not** loaded yet, so
+set the variables in the shell or in your service manager (see
+[`../deploy/`](../deploy/)); [`.env.example`](./.env.example) previews the full set.
 
-| Variable          | Default              | Meaning                              |
-| ----------------- | -------------------- | ------------------------------------ |
-| `PORT`            | `4500`               | Port to listen on.                   |
-| `HOST`            | `127.0.0.1`          | Interface to bind.                   |
-| `DB_PATH`         | `./commlink.sqlite`  | SQLite database file.                |
-| `RETENTION_HOURS` | `72`                 | How long cached messages are kept.   |
+| Variable          | Default              | Meaning                            | Status     |
+| ----------------- | -------------------- | ---------------------------------- | ---------- |
+| `PORT`            | `4500`               | Port to listen on.                 | Read now   |
+| `HOST`            | `127.0.0.1`          | Interface to bind.                 | Read now   |
+| `DB_PATH`         | `./commlink.sqlite`  | SQLite database file.              | Not yet    |
+| `RETENTION_HOURS` | `72`                 | How long cached messages are kept. | Not yet    |
+
+`DB_PATH` and `RETENTION_HOURS` land with the message cache; setting them today has no
+effect.
 
 The server binds loopback by default. To expose it, put it behind a TLS reverse proxy —
 see [`../deploy/`](../deploy/).

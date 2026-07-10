@@ -10,11 +10,9 @@ const app = buildApp();
 app
   .listen({ port: PORT, host: HOST })
   .then((address) => {
-    // eslint-disable-next-line no-console
     console.log(`commlink server listening on ${address}`);
   })
   .catch((err) => {
-    // eslint-disable-next-line no-console
     console.error(err);
     process.exit(1);
   });
