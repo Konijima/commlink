@@ -6,6 +6,7 @@ import { KEEPALIVE_INTERVAL_MS, everyInterval } from './keepalive.js';
 import type { Message } from './message.js';
 import { parseSince, parseTopicList } from './message.js';
 import type { MessageStore } from './store.js';
+import type { TokenStore } from './tokens.js';
 
 /**
  * RFC 6455 close code for a message that violates the endpoint's policy. Sent when
@@ -32,11 +33,17 @@ export interface SubscribeOptions {
  * additionally replays the stored backlog from that second onwards, so a client whose
  * connection dropped reconnects with `?since=` set to the last timestamp it saw and
  * misses nothing in between.
+ *
+ * A connection is authenticated once, at the upgrade. The same sweep that pings idle
+ * sockets re-checks each one's token against `tokens`, so a subscriber whose token was
+ * revoked is closed within a keepalive interval rather than holding its stream until it
+ * happens to reconnect.
  */
 export function registerSubscribeRoute(
   app: FastifyInstance,
   broker: Broker,
   store: MessageStore,
+  tokens: TokenStore,
   options: SubscribeOptions = {},
 ): void {
   const intervalMs = options.keepaliveIntervalMs ?? KEEPALIVE_INTERVAL_MS;
@@ -45,9 +52,21 @@ export function registerSubscribeRoute(
   // Every open socket, against whether it has been heard from since the last ping.
   const responded = new Map<WebSocket, boolean>();
 
+  // The token id that authorized each socket, so the sweep can tell when it was revoked.
+  const tokenOf = new Map<WebSocket, number>();
+
   everyInterval(app, intervalMs, () => {
     for (const [socket, heardFrom] of responded) {
       if (socket.readyState !== socket.OPEN) continue;
+
+      const tokenId = tokenOf.get(socket);
+      if (tokenId === undefined || !tokens.has(tokenId)) {
+        // The token that authorized this subscription has been revoked. Close with the
+        // policy code and a reason, so the client learns why rather than seeing a bare
+        // drop, and let `close` detach it from the broker.
+        socket.close(CLOSE_POLICY_VIOLATION, 'token revoked');
+        continue;
+      }
 
       if (!heardFrom) {
         // A whole interval with no pong. The peer is gone or wedged, and a TCP write
@@ -97,12 +116,16 @@ export function registerSubscribeRoute(
       const unsubscribe = broker.subscribe(topics, send);
 
       responded.set(socket, true);
+      // Auth refuses any subscribe without a token before this handler runs, so every
+      // socket here carries one; the sweep re-checks that id to catch a revocation.
+      tokenOf.set(socket, request.tokenId as number);
       // `ws` answers a ping with a pong on its own, so a healthy client needs no code
       // of its own to stay subscribed.
       socket.on('pong', () => responded.set(socket, true));
 
       const detach = () => {
         responded.delete(socket);
+        tokenOf.delete(socket);
         unsubscribe();
       };
 

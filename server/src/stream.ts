@@ -6,6 +6,7 @@ import { KEEPALIVE_INTERVAL_MS, everyInterval } from './keepalive.js';
 import type { Message } from './message.js';
 import { parseSince, parseTopicList } from './message.js';
 import type { MessageStore } from './store.js';
+import type { TokenStore } from './tokens.js';
 
 export interface StreamOptions {
   /** How often an idle stream is sent a blank line. Shortened by the keepalive tests. */
@@ -25,22 +26,30 @@ export interface StreamOptions {
  * a comma-separated topic list just as the socket does. It honours `?since=<unix_ts>`
  * exactly as the socket does, replaying the stored backlog before the live messages.
  * The response never completes on its own: the client reads until it disconnects.
+ *
+ * A stream is authenticated once, at the request. The same sweep that writes the
+ * keepalive line re-checks each reader's token against `tokens`, so a reader whose
+ * token was revoked has its response ended within a keepalive interval rather than
+ * streaming on until it happens to reconnect.
  */
 export function registerStreamRoute(
   app: FastifyInstance,
   broker: Broker,
   store: MessageStore,
+  tokens: TokenStore,
   options: StreamOptions = {},
 ): void {
   const intervalMs = options.keepaliveIntervalMs ?? KEEPALIVE_INTERVAL_MS;
   const maxBufferedBytes = options.maxBufferedBytes ?? MAX_BUFFERED_BYTES;
 
-  // A streaming response is never idle, so the HTTP server would wait on it forever
-  // while shutting down. End the open ones before the server stops accepting.
-  const open = new Set<ServerResponse>();
+  // Every open response, against the token id that authorized it — so the sweep can end
+  // one whose token has been revoked. A streaming response is also never idle, so the
+  // HTTP server would wait on it forever while shutting down; the same set is what the
+  // preClose hook ends before the server stops accepting.
+  const open = new Map<ServerResponse, number>();
 
   app.addHook('preClose', async () => {
-    for (const response of open) response.end();
+    for (const response of open.keys()) response.end();
   });
 
   /** Whether `response` can still be written to at all. */
@@ -68,8 +77,15 @@ export function registerStreamRoute(
   // writing it is what surfaces a peer that vanished without a FIN: the response
   // errors, which detaches the subscriber below.
   everyInterval(app, intervalMs, () => {
-    for (const response of open) {
+    for (const [response, tokenId] of open) {
       if (!isWritable(response)) continue;
+      if (!tokens.has(tokenId)) {
+        // The token that authorized this stream has been revoked. A stream has no close
+        // frame to carry a reason, so end the response; the client's read loop stops,
+        // and `close` detaches the subscriber.
+        response.end();
+        continue;
+      }
       // A stream has no pong to withhold, so a reader that stalled and then went
       // quiet would hold its backlog until the next message. This is where it goes.
       if (dropIfBackedUp(response)) continue;
@@ -103,7 +119,9 @@ export function registerStreamRoute(
         'x-accel-buffering': 'no',
       });
       response.flushHeaders();
-      open.add(response);
+      // Auth refuses any stream without a token before this handler runs, so every
+      // reader here carries one; the sweep re-checks that id to catch a revocation.
+      open.set(response, request.tokenId as number);
 
       const send = (message: Message) => {
         if (!isWritable(response)) return;
