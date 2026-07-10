@@ -1,17 +1,19 @@
 import type { ServerResponse } from 'node:http';
 import type { FastifyInstance } from 'fastify';
 import type { Broker } from './broker';
-import { TOPIC_RULE, isValidTopic } from './message';
+import { parseTopicList } from './message';
 
 /**
- * Mount `GET /:topic/json`, a newline-delimited JSON stream carrying the same
- * messages `/:topic/ws` pushes — one message per line, written as it is published:
+ * Mount `GET /:topics/json`, a newline-delimited JSON stream carrying the same
+ * messages `/:topics/ws` pushes — one message per line, written as it is published:
  *
  *     curl -sN http://127.0.0.1:4500/mytopic/json
+ *     curl -sN http://127.0.0.1:4500/mytopic,other/json
  *
- * It is the fallback for clients that cannot open a WebSocket. Like the socket, it
- * is live-only, and the response never completes on its own: the client reads until
- * it disconnects.
+ * It is the fallback for clients that cannot open a WebSocket, and multiplexes over
+ * a comma-separated topic list just as the socket does. Like the socket, it is
+ * live-only, and the response never completes on its own: the client reads until it
+ * disconnects.
  */
 export function registerStreamRoute(app: FastifyInstance, broker: Broker): void {
   // A streaming response is never idle, so the HTTP server would wait on it forever
@@ -23,10 +25,11 @@ export function registerStreamRoute(app: FastifyInstance, broker: Broker): void 
   });
 
   app.get<{ Params: { topic: string } }>('/:topic/json', (request, reply) => {
-    const { topic } = request.params;
-
-    if (!isValidTopic(topic)) {
-      reply.code(400).send({ error: TOPIC_RULE });
+    let topics: string[];
+    try {
+      topics = parseTopicList(request.params.topic);
+    } catch (error) {
+      reply.code(400).send({ error: (error as Error).message });
       return;
     }
 
@@ -45,7 +48,7 @@ export function registerStreamRoute(app: FastifyInstance, broker: Broker): void 
     response.flushHeaders();
     open.add(response);
 
-    const unsubscribe = broker.subscribe([topic], (message) => {
+    const unsubscribe = broker.subscribe(topics, (message) => {
       if (response.writableEnded) return;
       response.write(`${JSON.stringify(message)}\n`);
     });

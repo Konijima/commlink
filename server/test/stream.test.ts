@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import { buildApp } from '../src/app';
 import { Broker } from '../src/broker';
+import { MAX_SUBSCRIBE_TOPICS, MAX_TOPIC_LENGTH, TOPIC_LIST_RULE } from '../src/message';
 import type { Message } from '../src/message';
 
 describe('GET /:topic/json', () => {
@@ -58,16 +59,22 @@ describe('GET /:topic/json', () => {
     };
   }
 
-  /** Open a stream and resolve once it is attached to the topic. */
-  async function open(topic: string): Promise<Response> {
-    const before = broker.listenerCount(topic);
+  /**
+   * Open a stream on one topic, or on a comma-separated list of them, and resolve
+   * once it is attached.
+   */
+  async function open(topicList: string): Promise<Response> {
+    // One `broker.subscribe` call attaches the listener to every topic at once, so
+    // seeing it on the first proves it landed on all of them.
+    const [first] = topicList.split(',');
+    const before = broker.listenerCount(first);
     const controller = new AbortController();
     controllers.push(controller);
 
     // Resolves as soon as the headers are flushed; the body arrives line by line.
-    const response = await fetch(`${httpBase}/${topic}/json`, { signal: controller.signal });
+    const response = await fetch(`${httpBase}/${topicList}/json`, { signal: controller.signal });
 
-    await vi.waitFor(() => expect(broker.listenerCount(topic)).toBeGreaterThan(before));
+    await vi.waitFor(() => expect(broker.listenerCount(first)).toBeGreaterThan(before));
 
     return response;
   }
@@ -206,6 +213,94 @@ describe('GET /:topic/json', () => {
       expect(broker.listenerCount(topic)).toBe(0);
     },
   );
+
+  describe('multiplexed over one stream', () => {
+    it('writes messages from every topic in the list', async () => {
+      const stream = lines(await open('alpha,beta,gamma'));
+
+      await publish('alpha', 'from alpha');
+      await publish('beta', 'from beta');
+      await publish('gamma', 'from gamma');
+
+      expect((await stream.next()).message).toBe('from alpha');
+      expect((await stream.next()).message).toBe('from beta');
+      expect((await stream.next()).message).toBe('from gamma');
+    });
+
+    it('names the source topic on each line, so a client can tell them apart', async () => {
+      const stream = lines(await open('alpha,beta'));
+
+      await publish('beta', 'hello');
+      await publish('alpha', 'hello');
+
+      expect((await stream.next()).topic).toBe('beta');
+      expect((await stream.next()).topic).toBe('alpha');
+    });
+
+    it('attaches exactly one listener to each topic in the list', async () => {
+      await open('alpha,beta');
+
+      expect(broker.listenerCount('alpha')).toBe(1);
+      expect(broker.listenerCount('beta')).toBe(1);
+    });
+
+    it('does not write a topic the client did not ask for', async () => {
+      const stream = lines(await open('alpha,beta'));
+
+      // `gamma` fans out first; had it leaked, it would arrive as the first line.
+      await publish('gamma', 'not subscribed');
+      await publish('beta', 'subscribed');
+
+      expect((await stream.next()).message).toBe('subscribed');
+    });
+
+    it('detaches from every topic when the client disconnects', async () => {
+      await open('alpha,beta,gamma');
+
+      controllers[controllers.length - 1].abort();
+
+      await vi.waitFor(() => {
+        expect(broker.listenerCount('alpha')).toBe(0);
+        expect(broker.listenerCount('beta')).toBe(0);
+        expect(broker.listenerCount('gamma')).toBe(0);
+      });
+    });
+
+    it('rejects a list with one bad entry, subscribing to none of it', async () => {
+      const response = await fetch(`${httpBase}/alpha,bad.topic/json`);
+
+      expect(response.status).toBe(400);
+      expect(((await response.json()) as { error: string }).error).toMatch(/^topic must be/);
+      expect(broker.listenerCount('alpha')).toBe(0);
+    });
+
+    it('rejects an over-long list with 400', async () => {
+      const names = Array.from({ length: MAX_SUBSCRIBE_TOPICS + 1 }, (_, i) => `topic${i}`);
+
+      const response = await fetch(`${httpBase}/${names.join(',')}/json`);
+
+      expect(response.status).toBe(400);
+      expect(((await response.json()) as { error: string }).error).toBe(TOPIC_LIST_RULE);
+      expect(broker.listenerCount('topic0')).toBe(0);
+    });
+
+    it('serves a list of full-length topic names rather than rejecting the URL', async () => {
+      // The router caps a path parameter at 100 characters by default, which is
+      // shorter than a legal topic list and answers one with `414` before the route
+      // runs. Every name here is at the maximum length, so the whole list is too.
+      const names = Array.from({ length: MAX_SUBSCRIBE_TOPICS }, (_, i) =>
+        String(i).padStart(MAX_TOPIC_LENGTH, 'a'),
+      );
+
+      const response = await open(names.join(','));
+      expect(response.status).toBe(200);
+
+      const stream = lines(response);
+      await publish(names[MAX_SUBSCRIBE_TOPICS - 1], 'hello');
+
+      expect((await stream.next()).topic).toBe(names[MAX_SUBSCRIBE_TOPICS - 1]);
+    });
+  });
 
   it('shuts the server down while a stream is still open', async () => {
     const stream = lines(await open('alpha'));

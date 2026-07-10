@@ -1,17 +1,21 @@
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
 import type { Broker } from './broker';
-import { isValidTopic } from './message';
+import { parseTopicList } from './message';
 
 /**
  * RFC 6455 close code for a message that violates the endpoint's policy. Sent when
- * the requested topic name is not one the server will ever serve.
+ * the requested topics are not ones the server will ever serve.
  */
 const CLOSE_POLICY_VIOLATION = 1008;
 
 /**
- * Mount `GET /:topic/ws`, which upgrades to a WebSocket and pushes every message
- * published to `topic` as one JSON frame per message.
+ * Mount `GET /:topics/ws`, which upgrades to a WebSocket and pushes every message
+ * published to any of `topics` as one JSON frame per message.
+ *
+ * `topics` is one name or several separated by commas, so a client watching many
+ * topics needs only one connection. Each frame names its own topic, which is how a
+ * multiplexed subscriber tells them apart.
  *
  * Subscribers are live-only: a frame arrives for messages published while the socket
  * is open, and nothing is replayed on connect. Caching and `?since=` come later.
@@ -21,16 +25,18 @@ export function registerSubscribeRoute(app: FastifyInstance, broker: Broker): vo
     '/:topic/ws',
     { websocket: true },
     (socket: WebSocket, request) => {
-      const { topic } = request.params;
-
-      // The upgrade has already completed, so a bad topic is reported as a close
-      // frame rather than a 400. Clients read the reason off the close event.
-      if (!isValidTopic(topic)) {
-        socket.close(CLOSE_POLICY_VIOLATION, 'invalid topic');
+      let topics: string[];
+      try {
+        topics = parseTopicList(request.params.topic);
+      } catch (error) {
+        // The upgrade has already completed, so a bad topic list is reported as a
+        // close frame rather than a 400. Clients read the reason off the close event.
+        // `ws` throws on a reason over 123 bytes; both topic rules are well under it.
+        socket.close(CLOSE_POLICY_VIOLATION, (error as Error).message);
         return;
       }
 
-      const unsubscribe = broker.subscribe([topic], (message) => {
+      const unsubscribe = broker.subscribe(topics, (message) => {
         // A socket that is closing still accepts `send`, which then queues forever.
         if (socket.readyState !== socket.OPEN) return;
         socket.send(JSON.stringify(message));
