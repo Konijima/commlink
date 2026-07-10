@@ -8,15 +8,16 @@ before the Android client is built against it.
 
 - [x] Repository scaffold: pnpm/TypeScript server project, Android placeholder, CI.
 - [x] Server `GET /healthz` returning `200` with process uptime, plus a smoke test.
+- [x] `POST /:topic` — publish a text or JSON body to a topic. Optional headers:
+      `X-Title`, `X-Priority` (1–5, default 3), `X-Tags` (comma-separated). Works
+      with a bare `curl -d "hello" https://server/mytopic`. Messages fan out to live
+      subscribers through an in-memory broker.
 
 ## Server (v0.1)
 
 The self-hostable pub/sub core.
 
 ### Publish & subscribe
-- [ ] `POST /:topic` — publish a text or JSON body to a topic. Optional headers:
-      `X-Title`, `X-Priority` (1–5, default 3), `X-Tags` (comma-separated). Must work
-      with a bare `curl -d "hello" https://server/mytopic`.
 - [ ] `GET /:topic/ws` — upgrade to WebSocket and push each new message as a JSON frame
       `{ id, topic, title, message, priority, tags, timestamp }`.
 - [ ] `GET /:topic/json` — HTTP long-poll / SSE fallback for the same stream.
