@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
+import { MAX_BUFFERED_BYTES } from './backpressure';
 import type { Broker } from './broker';
 import { KEEPALIVE_INTERVAL_MS, everyInterval } from './keepalive';
 import { parseTopicList } from './message';
@@ -9,6 +10,13 @@ import { parseTopicList } from './message';
  * the requested topics are not ones the server will ever serve.
  */
 const CLOSE_POLICY_VIOLATION = 1008;
+
+export interface SubscribeOptions {
+  /** How often an idle subscriber is pinged. Shortened by the keepalive tests. */
+  keepaliveIntervalMs?: number;
+  /** How much may queue for one subscriber. Lowered by the backpressure tests. */
+  maxBufferedBytes?: number;
+}
 
 /**
  * Mount `GET /:topics/ws`, which upgrades to a WebSocket and pushes every message
@@ -24,8 +32,11 @@ const CLOSE_POLICY_VIOLATION = 1008;
 export function registerSubscribeRoute(
   app: FastifyInstance,
   broker: Broker,
-  intervalMs: number = KEEPALIVE_INTERVAL_MS,
+  options: SubscribeOptions = {},
 ): void {
+  const intervalMs = options.keepaliveIntervalMs ?? KEEPALIVE_INTERVAL_MS;
+  const maxBufferedBytes = options.maxBufferedBytes ?? MAX_BUFFERED_BYTES;
+
   // Every open socket, against whether it has been heard from since the last ping.
   const responded = new Map<WebSocket, boolean>();
 
@@ -64,6 +75,15 @@ export function registerSubscribeRoute(
       const unsubscribe = broker.subscribe(topics, (message) => {
         // A socket that is closing still accepts `send`, which then queues forever.
         if (socket.readyState !== socket.OPEN) return;
+
+        if (socket.bufferedAmount > maxBufferedBytes) {
+          // The peer has stopped reading and its backlog is ours to hold. A close
+          // frame would only queue behind that same backlog, so there is no polite
+          // way out: drop the connection and let the client come back.
+          socket.terminate();
+          return;
+        }
+
         socket.send(JSON.stringify(message));
       });
 

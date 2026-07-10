@@ -129,6 +129,16 @@ touches every subscriber every **45 seconds**:
 A client that has heard nothing at all for 90 seconds should assume the connection is
 dead and reconnect.
 
+### Slow subscribers
+
+A subscriber that stops reading does not stop the messages published to its topics.
+They queue in the server, so the server holds at most **1 MiB** for any one connection
+and then drops it — a client on a bad link cannot grow the process without bound. A
+dropped subscriber sees its WebSocket or stream close, and is free to reconnect.
+
+Reading promptly is all a client has to do to stay under the limit: the queue drains
+between messages and only a stalled connection ever accumulates.
+
 ## Configuration
 
 Configuration comes from the process environment. A `.env` file is **not** loaded yet, so
