@@ -1,5 +1,6 @@
 import { buildApp } from './app.js';
 import { parseRetentionHours } from './retention.js';
+import { installShutdownHandlers } from './shutdown.js';
 import { MessageStore } from './store.js';
 import { TokenStore } from './tokens.js';
 
@@ -28,6 +29,9 @@ app
   .listen({ port: PORT, host: HOST })
   .then((address) => {
     console.log(`commlink server listening on ${address}`);
+    // Turn a stop signal into a clean close now that there is a listening server to
+    // drain: subscribers are told to go away rather than having their sockets severed.
+    installShutdownHandlers(app);
   })
   .catch((err) => {
     console.error(err);
