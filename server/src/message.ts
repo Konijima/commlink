@@ -235,7 +235,8 @@ export function parseTags(raw: string | undefined): string[] {
     .filter((tag) => tag.length > 0);
 
   if (tags.length > MAX_TAGS) throw new RangeError(TAGS_RULE);
-  if (tags.some((tag) => headerBytes(tag) > MAX_TAG_BYTES)) throw new RangeError(TAGS_RULE);
+  if (tags.some((tag) => headerBytes(tag) > MAX_TAG_BYTES))
+    throw new RangeError(TAGS_RULE);
 
   return tags;
 }

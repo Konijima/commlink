@@ -230,7 +230,11 @@ describe('POST /:topic', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/mytopic',
-        headers: { ...bearer(token), 'content-type': 'text/plain', 'x-priority': priority },
+        headers: {
+          ...bearer(token),
+          'content-type': 'text/plain',
+          'x-priority': priority,
+        },
         payload: 'hello',
       });
 

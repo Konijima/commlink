@@ -35,7 +35,11 @@ export function failWith(command: string): Fail {
  * match is not what the caller meant. A second name is a mistake too — better to refuse
  * than to silently act on the first and drop the rest.
  */
-export function oneName(fail: Fail, usage: string, argv: string[] = process.argv): string {
+export function oneName(
+  fail: Fail,
+  usage: string,
+  argv: string[] = process.argv,
+): string {
   const name: string | undefined = argv[2];
   if (name === undefined || name.length === 0) return fail(usage);
   if (argv.length > 3) return fail('one name at a time');

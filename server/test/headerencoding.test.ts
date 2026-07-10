@@ -21,7 +21,8 @@ import { bearer, buildTestApp } from './helpers.js';
  * per byte received, so this is what a client's UTF-8 bytes look like on arrival.
  * `app.inject` skips the wire, and would otherwise deliver characters Node never would.
  */
-const asReceived = (value: string): string => Buffer.from(value, 'utf8').toString('latin1');
+const asReceived = (value: string): string =>
+  Buffer.from(value, 'utf8').toString('latin1');
 
 /** Raw bytes as a route would see them, for spelling out what is not valid UTF-8. */
 const bytes = (...values: number[]): string => Buffer.from(values).toString('latin1');
@@ -110,7 +111,9 @@ describe('parseTags decoding', () => {
     const atLimit = asReceived('é'.repeat(MAX_TAG_BYTES / 2));
     expect(parseTags(atLimit)).toHaveLength(1);
 
-    expect(() => parseTags(asReceived('é'.repeat(MAX_TAG_BYTES / 2 + 1)))).toThrow(TAGS_RULE);
+    expect(() => parseTags(asReceived('é'.repeat(MAX_TAG_BYTES / 2 + 1)))).toThrow(
+      TAGS_RULE,
+    );
   });
 
   it('splits on a comma the same way before and after decoding', () => {

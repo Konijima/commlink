@@ -69,7 +69,8 @@ async function waitUntil(predicate: () => boolean, timeoutMs = 2_000): Promise<v
   const deadline = Date.now() + timeoutMs;
 
   while (!predicate()) {
-    if (Date.now() >= deadline) throw new Error(`condition still false after ${timeoutMs}ms`);
+    if (Date.now() >= deadline)
+      throw new Error(`condition still false after ${timeoutMs}ms`);
     await sleep(SETTLE_MS);
   }
 }
@@ -142,7 +143,9 @@ describe('backpressure on GET /:topic/ws', () => {
       if (broker.listenerCount(topic) === remaining) return sent;
     }
 
-    throw new Error(`still ${broker.listenerCount(topic)} subscribed after ${MAX_PUBLISHES}`);
+    throw new Error(
+      `still ${broker.listenerCount(topic)} subscribed after ${MAX_PUBLISHES}`,
+    );
   }
 
   it('drops a subscriber that stops reading, detaching it from the broker', async () => {
@@ -257,7 +260,11 @@ describe('backpressure on GET /:topic/json', () => {
 
   async function openStream(topic: string): Promise<Stream> {
     const reader = await new Promise<IncomingMessage>((resolve, reject) => {
-      const request = get(`${httpBase}/${topic}/json`, { headers: bearer(token) }, resolve);
+      const request = get(
+        `${httpBase}/${topic}/json`,
+        { headers: bearer(token) },
+        resolve,
+      );
       request.on('error', reject);
     });
     readers.push(reader);
@@ -266,7 +273,8 @@ describe('backpressure on GET /:topic/json', () => {
     await waitUntil(() => broker.listenerCount(topic) === 1);
 
     const response = held.at(-1);
-    if (response === undefined) throw new Error('the server never saw the stream request');
+    if (response === undefined)
+      throw new Error('the server never saw the stream request');
 
     return { reader, response };
   }
@@ -305,7 +313,10 @@ describe('backpressure on GET /:topic/json', () => {
    * over the limit does not drop it. This never publishes to a reader already over the
    * limit, so no message delivery can be what drops it — which leaves the keepalive.
    */
-  async function fillUntilStalled(topic: string, response: ServerResponse): Promise<void> {
+  async function fillUntilStalled(
+    topic: string,
+    response: ServerResponse,
+  ): Promise<void> {
     for (let sent = 1; sent <= MAX_PUBLISHES; sent += 1) {
       await publish(topic);
       await sleep(SETTLE_MS);
@@ -314,7 +325,9 @@ describe('backpressure on GET /:topic/json', () => {
       // have dropped it. One that did means `send` now weighs the backlog after writing
       // rather than before — and the keepalive below would never get the chance to act.
       if (broker.listenerCount(topic) === 0) {
-        throw new Error(`delivering message ${sent} dropped the reader; the fill must not`);
+        throw new Error(
+          `delivering message ${sent} dropped the reader; the fill must not`,
+        );
       }
 
       if (response.writableLength <= SMALL_LIMIT) continue;

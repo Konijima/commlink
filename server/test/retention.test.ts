@@ -146,9 +146,12 @@ describe('retention sweep', () => {
     expect(() => store.since(['mytopic'], 0)).not.toThrow();
   });
 
-  it.each([0, -1, 1.5, Number.NaN])('refuses to build with a retention of %o hours', (hours) => {
-    expect(() => buildApp({ retentionHours: hours })).toThrow(RangeError);
-  });
+  it.each([0, -1, 1.5, Number.NaN])(
+    'refuses to build with a retention of %o hours',
+    (hours) => {
+      expect(() => buildApp({ retentionHours: hours })).toThrow(RangeError);
+    },
+  );
 });
 
 describe('retention and replay', () => {

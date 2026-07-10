@@ -146,7 +146,9 @@ describe('keepalive on GET /:topic/ws', () => {
     // peer that vanished without closing the TCP connection.
     socket.pause();
 
-    await vi.waitFor(() => expect(broker.listenerCount('alpha')).toBe(0), { timeout: 2_000 });
+    await vi.waitFor(() => expect(broker.listenerCount('alpha')).toBe(0), {
+      timeout: 2_000,
+    });
   });
 
   it('detaches every topic of a multiplexed subscriber that stops answering', async () => {
@@ -239,7 +241,11 @@ describe('keepalive on GET /:topic/json', () => {
   }
 
   function publish(topic: string, body: string) {
-    return fetch(`${httpBase}/${topic}`, { method: 'POST', headers: bearer(token), body });
+    return fetch(`${httpBase}/${topic}`, {
+      method: 'POST',
+      headers: bearer(token),
+      body,
+    });
   }
 
   it('writes a blank line to an idle stream, repeatedly', async () => {

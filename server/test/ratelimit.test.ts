@@ -119,7 +119,8 @@ describe('RateLimiter', () => {
     expect(RATE_LIMIT_WINDOW_MS).toBe(60_000);
 
     const limiter = new RateLimiter();
-    for (let n = 0; n < PUBLISH_RATE_LIMIT; n += 1) expect(limiter.take(KEY, 0)).toBeNull();
+    for (let n = 0; n < PUBLISH_RATE_LIMIT; n += 1)
+      expect(limiter.take(KEY, 0)).toBeNull();
 
     expect(limiter.take(KEY, 0)).toBe(60);
   });
@@ -133,7 +134,9 @@ describe('publishRateLimit', () => {
     const request = { tokenId: undefined } as FastifyRequest;
     const reply = {} as FastifyReply;
 
-    await expect(hook(request, reply)).rejects.toThrow(/before the request was authenticated/);
+    await expect(hook(request, reply)).rejects.toThrow(
+      /before the request was authenticated/,
+    );
   });
 
   it('spends a slot of the token that authenticated, not of some shared budget', async () => {

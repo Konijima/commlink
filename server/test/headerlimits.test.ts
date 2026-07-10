@@ -23,7 +23,8 @@ const ascii = (bytes: number): string => 'x'.repeat(bytes);
  * character per byte received, so this is what `'é'.repeat(n)` looks like on arrival.
  * `app.inject` skips the wire, and would otherwise deliver characters Node never would.
  */
-const asReceived = (value: string): string => Buffer.from(value, 'utf8').toString('latin1');
+const asReceived = (value: string): string =>
+  Buffer.from(value, 'utf8').toString('latin1');
 
 describe('parseTitle', () => {
   it('accepts a title of exactly the limit', () => {
@@ -59,7 +60,8 @@ describe('parseTitle', () => {
 });
 
 describe('parseTags', () => {
-  const tags = (count: number): string => Array.from({ length: count }, () => 'a').join(',');
+  const tags = (count: number): string =>
+    Array.from({ length: count }, () => 'a').join(',');
 
   it('accepts exactly the tag limit', () => {
     expect(parseTags(tags(MAX_TAGS))).toHaveLength(MAX_TAGS);
@@ -78,7 +80,9 @@ describe('parseTags', () => {
   });
 
   it('counts a tag in the bytes received, not the characters they spell', () => {
-    expect(() => parseTags(asReceived('é'.repeat(MAX_TAG_BYTES / 2 + 1)))).toThrow(TAGS_RULE);
+    expect(() => parseTags(asReceived('é'.repeat(MAX_TAG_BYTES / 2 + 1)))).toThrow(
+      TAGS_RULE,
+    );
   });
 
   it('counts a tag after its surrounding space is trimmed', () => {
@@ -141,7 +145,9 @@ describe('publish header limits', () => {
   });
 
   it('refuses too many tags with 400, naming the rule', async () => {
-    const res = await publish({ 'x-tags': Array.from({ length: MAX_TAGS + 1 }, () => 'a').join(',') });
+    const res = await publish({
+      'x-tags': Array.from({ length: MAX_TAGS + 1 }, () => 'a').join(','),
+    });
 
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({ error: TAGS_RULE });
@@ -158,14 +164,19 @@ describe('publish header limits', () => {
     const listener = vi.fn();
     broker.subscribe(['mytopic'], listener);
 
-    expect((await publish({ 'x-title': ascii(MAX_TITLE_BYTES + 1) })).statusCode).toBe(400);
+    expect((await publish({ 'x-title': ascii(MAX_TITLE_BYTES + 1) })).statusCode).toBe(
+      400,
+    );
     expect(listener).not.toHaveBeenCalled();
     expect(store.since(['mytopic'], 0)).toEqual([]);
   });
 
   it('reports the broken priority when the title is over-long too', async () => {
     // Priority is parsed first, and one refusal names one rule.
-    const res = await publish({ 'x-priority': '9', 'x-title': ascii(MAX_TITLE_BYTES + 1) });
+    const res = await publish({
+      'x-priority': '9',
+      'x-title': ascii(MAX_TITLE_BYTES + 1),
+    });
 
     expect(res.statusCode).toBe(400);
     expect((res.json() as { error: string }).error).toContain('priority');
@@ -199,7 +210,9 @@ describe('publish header limits', () => {
         payload: 'hello',
       });
 
-    expect((await attempt({ 'x-title': ascii(MAX_TITLE_BYTES + 1) })).statusCode).toBe(400);
+    expect((await attempt({ 'x-title': ascii(MAX_TITLE_BYTES + 1) })).statusCode).toBe(
+      400,
+    );
     // The token's one slot is spent, so a well-formed publish now waits.
     expect((await attempt({})).statusCode).toBe(429);
 
