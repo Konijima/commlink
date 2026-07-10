@@ -105,6 +105,23 @@ curl -H "Authorization: Bearer $TOKEN" \
 Topic names are 1–64 characters of `A-Z`, `a-z`, `0-9`, `-` or `_`. A message needs a
 body or a title; an empty request with neither is rejected with `400`.
 
+### Body size
+
+A publish body is at most **4096 bytes** — bytes, not characters, so a multi-byte one
+counts for what it weighs. A larger one is rejected with `413`:
+
+```bash
+curl -i -H "Authorization: Bearer $TOKEN" --data-binary @big.txt http://127.0.0.1:4500/mytopic
+# HTTP/1.1 413 Payload Too Large
+# {"error":"message body must be at most 4096 bytes"}
+```
+
+The check happens while the body is being read, which is before the token is looked at.
+An over-long publish therefore hears `413` even with no credentials at all — the server
+refuses to hold a large body for a client it has not yet authenticated. Nothing is
+stored, nothing reaches subscribers, and the token is charged nothing against its
+rate limit.
+
 ### Rate limit
 
 A token may publish **60 times a minute**. The 61st is answered with `429` and a
@@ -300,4 +317,5 @@ All four are available now. Both subscribe routes take one topic or a comma-sepa
 list of them, and both accept `?since=<unix_ts>` to replay the cache before streaming
 live messages. "header" is `Authorization: Bearer <token>`; see
 [Authentication](#authentication). Publishing is capped at 60 requests a minute per
-token (see [Rate limit](#rate-limit)); the other three routes are uncapped.
+token (see [Rate limit](#rate-limit)) and 4096 bytes per body (see
+[Body size](#body-size)); the other three routes are uncapped.
