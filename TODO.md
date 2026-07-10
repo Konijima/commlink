@@ -67,6 +67,14 @@ before the Android client is built against it.
 
 The self-hostable pub/sub core.
 
+### Fix first
+
+- [ ] Make the backpressure suite deterministic (`BUGS.md#4`). One test predicts how many
+      messages fill a second connection from what filled a first, and the kernel does not
+      buffer two sockets alike — so the suite is intermittently red, and green does not
+      always mean the behaviour was exercised. Until it is fixed a failing run cannot be
+      told apart from a real regression, which makes it worth more than any feature below.
+
 ### Auth & safety
 - [ ] Disconnect a subscriber whose token is revoked. A token is checked when a
       connection is made, not while it is held, so a revoked subscriber keeps its open
