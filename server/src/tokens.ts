@@ -95,6 +95,7 @@ export class TokenStore {
   readonly #db: Database.Database;
   readonly #create: Database.Statement<[name: string, hash: string, createdAt: number]>;
   readonly #find: Database.Statement<[hash: string]>;
+  readonly #has: Database.Statement<[id: number]>;
   readonly #list: Database.Statement<[]>;
   readonly #revoke: Database.Statement<[name: string]>;
 
@@ -111,6 +112,7 @@ export class TokenStore {
       `INSERT INTO tokens (name, hash, created_at) VALUES (?, ?, ?)`,
     );
     this.#find = this.#db.prepare(`SELECT id FROM tokens WHERE hash = ?`);
+    this.#has = this.#db.prepare(`SELECT 1 FROM tokens WHERE id = ?`);
     // `hash` is deliberately absent: nothing that reads a token out of this store
     // should have to decide whether it may be shown.
     this.#list = this.#db.prepare(
@@ -162,9 +164,10 @@ export class TokenStore {
    * The row is deleted, so the token it stood for stops authorizing anything: every
    * request is looked up against the table as it arrives, with nothing cached in front
    * of it, and a server sharing this database sees the deletion on its very next
-   * request. A subscriber already holding a stream keeps it — a token is checked when a
-   * connection is made, not for as long as it is held — so revoking a subscriber's token
-   * takes effect when it next reconnects. Restart the server to cut them off at once.
+   * request. A token is checked when a connection is made, not for as long as it is
+   * held, so a subscriber already holding a stream is not cut off by the delete alone;
+   * the subscribe routes sweep their open connections against {@link has} and drop one
+   * whose token has gone, within a keepalive interval of the revoke.
    *
    * `false` means no such name, which is worth telling apart from success: it is what an
    * operator who mistyped the name would otherwise never hear.
@@ -196,6 +199,18 @@ export class TokenStore {
   /** Whether `token` is one this server issued. */
   verify(token: string): boolean {
     return this.identify(token) !== null;
+  }
+
+  /**
+   * Whether a token with this id is still stored. It is the check a held subscription
+   * makes to notice its token was revoked out from under it: {@link identify} answers
+   * that question from a token, but a connection has already resolved its token to an
+   * id, so this answers it from the id — and the server never has to keep the raw token
+   * around to re-check it. A revoked id is gone for good; a name minted again gets a new
+   * one, so no reused id can make a dropped subscriber look authorized.
+   */
+  has(id: number): boolean {
+    return this.#has.get(id) !== undefined;
   }
 
   close(): void {

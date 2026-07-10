@@ -109,6 +109,40 @@ describe('TokenStore', () => {
     });
   });
 
+  describe('has', () => {
+    it('finds a token by the id it was minted under', () => {
+      const id = tokens.identify(tokens.create('pixel'));
+
+      expect(tokens.has(id as number)).toBe(true);
+    });
+
+    it('does not find an id no token was ever minted under', () => {
+      tokens.create('pixel');
+
+      // Ids start at 1 and climb; nothing was minted far up the range.
+      expect(tokens.has(9999)).toBe(false);
+    });
+
+    it('stops finding a token once it is revoked', () => {
+      const id = tokens.identify(tokens.create('pixel'));
+      tokens.revoke('pixel');
+
+      // This is the check a held subscription makes: the id it resolved at connect time
+      // no longer names a stored token, which is how the sweep learns to drop it.
+      expect(tokens.has(id as number)).toBe(false);
+    });
+
+    it('does not find a revoked id even after the name is minted again', () => {
+      const firstId = tokens.identify(tokens.create('pixel')) as number;
+      tokens.revoke('pixel');
+      tokens.create('pixel');
+
+      // The replacement gets a fresh id, so a subscriber holding the old one is still
+      // dropped rather than silently adopted by the new token.
+      expect(tokens.has(firstId)).toBe(false);
+    });
+  });
+
   describe('list', () => {
     it('lists nothing before a token is minted', () => {
       expect(tokens.list()).toEqual([]);

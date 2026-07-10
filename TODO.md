@@ -73,10 +73,14 @@ before the Android client is built against it.
 The self-hostable pub/sub core.
 
 ### Auth & safety
-- [ ] Disconnect a subscriber whose token is revoked. A token is checked when a
-      connection is made, not while it is held, so a revoked subscriber keeps its open
-      stream until it reconnects. Restarting the server is the only way to cut one off
-      today, which is documented but blunt.
+- [x] Disconnect a subscriber whose token is revoked. A connection is authenticated
+      once, at the upgrade, so a revoked subscriber used to keep its open stream until it
+      reconnected. The keepalive sweep now re-checks each open subscriber's token against
+      the store and drops one whose token has gone — within a keepalive interval of the
+      revoke, on both `/ws` (closed `1008 "token revoked"`) and `/json` (the response is
+      ended). No restart, no held token: the connection is dropped by the id it resolved
+      at connect time, and a name minted again gets a fresh id so no dropped subscriber is
+      silently re-authorized.
 - [ ] Decide whether the publish rate limit needs to outlive the process. It is counted
       in memory, so a restart hands every token a fresh budget, and two server processes
       sharing a database would each grant the full 60. Neither matters to a single
