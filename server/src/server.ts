@@ -1,4 +1,5 @@
 import { buildApp } from './app.js';
+import { parseDbPath } from './dbpath.js';
 import { loadEnvFile } from './env.js';
 import { parseHost } from './host.js';
 import { buildLoggerOptions, parseLogLevel } from './logging.js';
@@ -38,7 +39,15 @@ try {
   console.error((err as Error).message);
   process.exit(1);
 }
-const DB_PATH = process.env.DB_PATH ?? './commlink.sqlite';
+let DB_PATH: string;
+try {
+  DB_PATH = parseDbPath(process.env.DB_PATH);
+} catch (err) {
+  // Refuse to start rather than hand SQLite a blank path, which it opens as a private
+  // temporary database — silently ephemeral, and a separate one per store.
+  console.error((err as Error).message);
+  process.exit(1);
+}
 
 let retentionHours: number;
 try {

@@ -1,10 +1,11 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { DB_PATH_RULE } from '../src/dbpath.js';
 import { HOST_RULE } from '../src/host.js';
 import { logLevelRule } from '../src/logging.js';
 import { PORT_RULE } from '../src/port.js';
@@ -116,6 +117,35 @@ describe('the server entrypoint refuses a bad config', () => {
     // operator fixes the setting rather than discovering the exposure.
     expect(outcome.stderr).toContain(HOST_RULE);
     expect(outcome.stdout).toBe('');
+  });
+
+  it.each<[string, string]>([
+    ['an empty value', ''],
+    ['whitespace that trims to nothing', '   '],
+  ])('exits non-zero naming the rule for a DB_PATH that is %s', async (_case, value) => {
+    const outcome = await start({ DB_PATH: value });
+
+    expect(outcome.status).not.toBe(0);
+    // A blank DB_PATH is not caught by `?? DEFAULT_DB_PATH` and reaches SQLite, which opens
+    // an empty filename as a private temporary database — silently ephemeral, and a separate
+    // one per store. The reason names DB_PATH so the operator fixes the setting rather than
+    // discovering the data loss. No database file lands in the throwaway directory: the
+    // refusal exits before either store is opened.
+    expect(outcome.stderr).toContain(DB_PATH_RULE);
+    expect(outcome.stdout).toBe('');
+    expect(await readdir(directory)).toStrictEqual([]);
+  });
+
+  it('does not refuse a valid DB_PATH for the db-path reason', async () => {
+    // A real path must clear the db-path gate. Pairing it with a bad LOG_LEVEL makes the boot
+    // fail for that later reason instead, so the process still exits promptly to assert on —
+    // but if the db-path parser rejected a good value, this would fail on the wrong message.
+    // `start` already sets DB_PATH to the throwaway file, so this leans on the default path.
+    const outcome = await start({ LOG_LEVEL: 'nonsense' });
+
+    expect(outcome.status).not.toBe(0);
+    expect(outcome.stderr).not.toContain(DB_PATH_RULE);
+    expect(outcome.stderr).toContain(logLevelRule());
   });
 
   it('does not refuse a valid HOST for the host reason', async () => {
