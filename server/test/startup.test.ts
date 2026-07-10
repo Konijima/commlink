@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { HOST_RULE } from '../src/host.js';
 import { logLevelRule } from '../src/logging.js';
 import { PORT_RULE } from '../src/port.js';
 import { RETENTION_RULE } from '../src/retention.js';
@@ -101,6 +102,31 @@ describe('the server entrypoint refuses a bad config', () => {
     // only after the database had been opened.
     expect(outcome.stderr).toContain(PORT_RULE);
     expect(outcome.stdout).toBe('');
+  });
+
+  it.each<[string, string]>([
+    ['an empty value', ''],
+    ['whitespace that trims to nothing', '   '],
+  ])('exits non-zero naming the rule for a HOST that is %s', async (_case, value) => {
+    const outcome = await start({ HOST: value });
+
+    expect(outcome.status).not.toBe(0);
+    // A blank HOST is not caught by `?? DEFAULT_HOST` and reaches `listen` as "unspecified",
+    // which binds every interface — a silent public bind. The reason names HOST so the
+    // operator fixes the setting rather than discovering the exposure.
+    expect(outcome.stderr).toContain(HOST_RULE);
+    expect(outcome.stdout).toBe('');
+  });
+
+  it('does not refuse a valid HOST for the host reason', async () => {
+    // A real address must clear the host gate. Pairing it with a bad LOG_LEVEL makes the boot
+    // fail for that later reason instead, so the process still exits promptly to assert on —
+    // but if the host parser rejected a good value, this would fail on the wrong message.
+    const outcome = await start({ HOST: '127.0.0.1', LOG_LEVEL: 'nonsense' });
+
+    expect(outcome.status).not.toBe(0);
+    expect(outcome.stderr).not.toContain(HOST_RULE);
+    expect(outcome.stderr).toContain(logLevelRule());
   });
 
   it('does not refuse a valid PORT for the port reason', async () => {
