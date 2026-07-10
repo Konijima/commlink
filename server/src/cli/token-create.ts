@@ -8,21 +8,10 @@
  * stderr, which is what makes `TOKEN=$(pnpm --silent token:create pixel)` work.
  */
 import { TokenStore } from '../tokens.js';
+import { DB_PATH, failWith, oneName } from './common.js';
 
-const DB_PATH = process.env.DB_PATH ?? './commlink.sqlite';
-
-function fail(message: string): never {
-  console.error(`token:create: ${message}`);
-  process.exit(1);
-}
-
-const name = process.argv[2];
-if (name === undefined || name.length === 0) {
-  fail('usage: token:create <name>');
-}
-if (process.argv.length > 3) {
-  fail('one name at a time');
-}
+const fail = failWith('token:create');
+const name = oneName(fail, 'usage: token:create <name>');
 
 // Creates the database if this runs before the server's first start, which is the
 // order an operator setting up a fresh install would naturally take.

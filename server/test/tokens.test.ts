@@ -109,6 +109,131 @@ describe('TokenStore', () => {
     });
   });
 
+  describe('list', () => {
+    it('lists nothing before a token is minted', () => {
+      expect(tokens.list()).toEqual([]);
+    });
+
+    it('names a minted token, and when it was minted', () => {
+      const before = Math.floor(Date.now() / 1000);
+      tokens.create('pixel');
+
+      const [record] = tokens.list();
+      expect(record.name).toBe('pixel');
+      expect(record.createdAt).toBeGreaterThanOrEqual(before);
+      expect(record.createdAt).toBeLessThanOrEqual(Math.floor(Date.now() / 1000));
+    });
+
+    it('lists tokens oldest first', () => {
+      tokens.create('first');
+      tokens.create('second');
+      tokens.create('third');
+
+      expect(tokens.list().map((record) => record.name)).toEqual([
+        'first',
+        'second',
+        'third',
+      ]);
+    });
+
+    it('reveals neither the token nor its hash', () => {
+      const token = tokens.create('pixel');
+
+      // This is what makes the listing safe to print. A record holds exactly three
+      // fields, and neither the credential nor the stored digest of it is among them.
+      const [record] = tokens.list();
+      expect(Object.keys(record).sort()).toEqual(['createdAt', 'id', 'name']);
+      expect(Object.values(record)).not.toContain(token);
+      expect(Object.values(record)).not.toContain(hashToken(token));
+    });
+
+    it('names each token by the id the rest of the server knows it as', () => {
+      const token = tokens.create('pixel');
+
+      expect(tokens.list()[0].id).toBe(tokens.identify(token));
+    });
+  });
+
+  describe('revoke', () => {
+    it('reports that it revoked a token that existed', () => {
+      tokens.create('pixel');
+
+      expect(tokens.revoke('pixel')).toBe(true);
+    });
+
+    it('stops the revoked token from authorizing anything', () => {
+      const token = tokens.create('pixel');
+      tokens.revoke('pixel');
+
+      expect(tokens.verify(token)).toBe(false);
+      expect(tokens.identify(token)).toBeNull();
+    });
+
+    it('drops the revoked token from the listing', () => {
+      tokens.create('pixel');
+      tokens.revoke('pixel');
+
+      expect(tokens.list()).toEqual([]);
+    });
+
+    it('leaves every other token working', () => {
+      const pixel = tokens.create('pixel');
+      const laptop = tokens.create('laptop');
+      tokens.revoke('pixel');
+
+      expect(tokens.verify(pixel)).toBe(false);
+      expect(tokens.verify(laptop)).toBe(true);
+      expect(tokens.list().map((record) => record.name)).toEqual(['laptop']);
+    });
+
+    it.each([
+      ['a name that was never minted', 'ghost'],
+      ['the empty name', ''],
+    ])('reports that it revoked nothing for %s', (_case, name) => {
+      tokens.create('pixel');
+
+      expect(tokens.revoke(name)).toBe(false);
+    });
+
+    it('reports that it revoked nothing the second time', () => {
+      tokens.create('pixel');
+      tokens.revoke('pixel');
+
+      expect(tokens.revoke('pixel')).toBe(false);
+    });
+
+    it('takes the name, not the token', () => {
+      // Handing `revoke` a token is a plausible slip, and one that must not quietly
+      // revoke nothing while the operator believes the token is dead.
+      const token = tokens.create('pixel');
+
+      expect(tokens.revoke(token)).toBe(false);
+      expect(tokens.verify(token)).toBe(true);
+    });
+
+    it('frees the name to be minted again', () => {
+      const first = tokens.create('pixel');
+      tokens.revoke('pixel');
+      const second = tokens.create('pixel');
+
+      expect(second).not.toBe(first);
+      expect(tokens.verify(first)).toBe(false);
+      expect(tokens.verify(second)).toBe(true);
+    });
+
+    it('gives the replacement token an id the revoked one never had', () => {
+      // Ids key the publish rate limit. Were SQLite to hand the new row the id of the
+      // deleted one — which it would, without `AUTOINCREMENT` — a token minted to
+      // replace a revoked one would inherit the budget the revoked one had spent.
+      const first = tokens.create('pixel');
+      const firstId = tokens.identify(first);
+      tokens.revoke('pixel');
+      const second = tokens.create('pixel');
+
+      expect(tokens.identify(second)).not.toBe(firstId);
+    });
+  });
+
   it.each(['', 'has space', 'has.dot', 'a'.repeat(65)])(
     'refuses to mint the name %j',
     (name) => {
@@ -181,6 +306,43 @@ describe('TokenStore', () => {
         expect(Object.values(row)).not.toContain(token);
       } finally {
         db.close();
+      }
+    });
+
+    it('refuses a token an earlier process revoked', () => {
+      const minting = new TokenStore(path);
+      const token = minting.create('pixel');
+      minting.close();
+
+      // What `token:revoke` deletes, a server holding its own connection has to refuse.
+      const revoking = new TokenStore(path);
+      expect(revoking.revoke('pixel')).toBe(true);
+      revoking.close();
+
+      const serving = new TokenStore(path);
+      try {
+        expect(serving.verify(token)).toBe(false);
+        expect(serving.list()).toEqual([]);
+      } finally {
+        serving.close();
+      }
+    });
+
+    it('shows a running store a token another connection revoked', () => {
+      // The CLI revokes while the server is up, against the same file. Nothing caches
+      // the lookup, so the next request the server serves must already miss.
+      const serving = new TokenStore(path);
+      const revoking = new TokenStore(path);
+      try {
+        const token = serving.create('pixel');
+        expect(serving.verify(token)).toBe(true);
+
+        expect(revoking.revoke('pixel')).toBe(true);
+
+        expect(serving.verify(token)).toBe(false);
+      } finally {
+        revoking.close();
+        serving.close();
       }
     });
 

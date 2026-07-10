@@ -247,6 +247,19 @@ describe('POST /:topic rate limit', () => {
     await exhaust();
   });
 
+  it('hands a token minted to replace a revoked one a fresh budget', async () => {
+    // `other` is the newest token, so its id is the one SQLite would hand out again if
+    // the column were not `AUTOINCREMENT` — and the budget is keyed by id. An operator
+    // who replaces a token must not also hand over what the revoked one had spent.
+    await exhaust(otherToken);
+    expect((await publish(otherToken)).statusCode).toBe(429);
+
+    expect(tokens.revoke('other')).toBe(true);
+    const replacement = tokens.create('other');
+
+    await exhaust(replacement);
+  });
+
   it('does not limit the health probe, which carries no token to charge', async () => {
     for (let n = 0; n < LIMIT + 1; n += 1) {
       expect((await app.inject({ method: 'GET', url: '/healthz' })).statusCode).toBe(200);

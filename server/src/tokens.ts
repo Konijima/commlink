@@ -17,6 +17,11 @@ const TOKEN_NAME_PATTERN = new RegExp(`^[A-Za-z0-9_-]{1,${MAX_TOKEN_NAME_LENGTH}
 /** What the token CLI tells an operator who chose a name the server will not store. */
 export const TOKEN_NAME_RULE = `name must be 1-${MAX_TOKEN_NAME_LENGTH} characters of A-Z, a-z, 0-9, hyphen or underscore`;
 
+/**
+ * `AUTOINCREMENT` is load-bearing, not decoration. Without it SQLite reuses the row id
+ * of a deleted row, so a token minted after a revoke could inherit the id — and with it
+ * the spent rate-limit budget — of the token it replaced.
+ */
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS tokens (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,6 +30,28 @@ const SCHEMA = `
     created_at INTEGER NOT NULL
   );
 `;
+
+/** One row of the `tokens` table, as SQLite spells the columns. */
+interface TokenRow {
+  id: number;
+  name: string;
+  created_at: number;
+}
+
+/**
+ * A token this server issued, as {@link TokenStore.list} reports it.
+ *
+ * Neither the token nor its hash is here. Everything in this record is safe to print,
+ * which is what lets an operator see what exists without handling a credential.
+ */
+export interface TokenRecord {
+  /** How the rest of the server names this token; see {@link TokenStore.identify}. */
+  id: number;
+  /** The label it was minted under, and the handle {@link TokenStore.revoke} takes. */
+  name: string;
+  /** When it was minted, in whole seconds since the Unix epoch. */
+  createdAt: number;
+}
 
 /**
  * Mint a token: 32 random bytes, base64url-encoded.
@@ -68,6 +95,8 @@ export class TokenStore {
   readonly #db: Database.Database;
   readonly #create: Database.Statement<[name: string, hash: string, createdAt: number]>;
   readonly #find: Database.Statement<[hash: string]>;
+  readonly #list: Database.Statement<[]>;
+  readonly #revoke: Database.Statement<[name: string]>;
 
   /**
    * Open (and create, if needed) the database at `path`. Pass {@link IN_MEMORY} for a
@@ -82,6 +111,12 @@ export class TokenStore {
       `INSERT INTO tokens (name, hash, created_at) VALUES (?, ?, ?)`,
     );
     this.#find = this.#db.prepare(`SELECT id FROM tokens WHERE hash = ?`);
+    // `hash` is deliberately absent: nothing that reads a token out of this store
+    // should have to decide whether it may be shown.
+    this.#list = this.#db.prepare(
+      `SELECT id, name, created_at FROM tokens ORDER BY id`,
+    );
+    this.#revoke = this.#db.prepare(`DELETE FROM tokens WHERE name = ?`);
   }
 
   /**
@@ -106,6 +141,40 @@ export class TokenStore {
     }
 
     return token;
+  }
+
+  /**
+   * Every token this server has issued, oldest first.
+   *
+   * A token cannot be read back out — only its hash was stored — so this is what an
+   * operator has instead: the names they minted, and when. It is the list {@link revoke}
+   * takes its argument from.
+   */
+  list(): TokenRecord[] {
+    const rows = this.#list.all() as TokenRow[];
+
+    return rows.map((row) => ({ id: row.id, name: row.name, createdAt: row.created_at }));
+  }
+
+  /**
+   * Revoke the token named `name`, and report whether there was one to revoke.
+   *
+   * The row is deleted, so the token it stood for stops authorizing anything: every
+   * request is looked up against the table as it arrives, with nothing cached in front
+   * of it, and a server sharing this database sees the deletion on its very next
+   * request. A subscriber already holding a stream keeps it — a token is checked when a
+   * connection is made, not for as long as it is held — so revoking a subscriber's token
+   * takes effect when it next reconnects. Restart the server to cut them off at once.
+   *
+   * `false` means no such name, which is worth telling apart from success: it is what an
+   * operator who mistyped the name would otherwise never hear.
+   *
+   * The name is free to mint again afterwards, and the token minted under it is a new
+   * token with a new id — so it starts with a fresh rate-limit budget rather than
+   * inheriting whatever the revoked one had spent.
+   */
+  revoke(name: string): boolean {
+    return this.#revoke.run(name).changes > 0;
   }
 
   /**

@@ -5,8 +5,9 @@ SQLite. It accepts published messages over HTTP and streams them to subscribed c
 over WebSocket.
 
 > Early development. Publishing, both subscribe routes, the message cache, `?since=`
-> replay, retention, bearer-token auth and publish rate limiting are live. A payload
-> size cap is still being built — see [`../TODO.md`](../TODO.md).
+> replay, retention, bearer-token auth, publish rate limiting and the payload and
+> metadata size caps are live. Graceful shutdown, `.env` loading and structured logging
+> are still to come — see [`../TODO.md`](../TODO.md).
 
 ## Requirements
 
@@ -23,6 +24,8 @@ pnpm install
 pnpm test              # vitest
 pnpm typecheck         # tsc --noEmit
 pnpm token:create me   # mint a token to publish and subscribe with
+pnpm token:list        # show the tokens this server has issued
+pnpm token:revoke me   # revoke one by name
 pnpm dev               # start on http://127.0.0.1:4500
 pnpm build             # compile to dist/
 pnpm smoke             # boot the compiled server and check /healthz
@@ -52,8 +55,41 @@ pnpm token:create pixel
 The name is a label for you — `pixel`, `laptop`, `ci` — and each name may be used once.
 Only a SHA-256 of the token is stored, so a lost token is replaced rather than
 recovered, and a stolen database yields nothing that can be presented back to the
-server. Tokens live in the same database as the messages, so `token:create` and the
+server. Tokens live in the same database as the messages, so the token commands and the
 server must be pointed at the same `DB_PATH`.
+
+### Managing tokens
+
+`token:list` shows what has been issued — the id the server knows each token by, the
+name it was minted under, and when. Neither the token nor its hash is printed, because
+neither is stored in a form that could be:
+
+```bash
+pnpm --silent token:list
+# 1	pixel	2026-07-10T09:12:44Z
+# 2	laptop	2026-07-10T09:13:02Z
+```
+
+The columns are tab-separated and the headings go to stderr, so `pnpm --silent
+token:list | cut -f2` names the tokens for a script.
+
+`token:revoke` deletes one by name, and the token stops working at once — every request
+is looked up against the database as it arrives, so a running server needs no restart:
+
+```bash
+pnpm token:revoke pixel
+# Token "pixel" revoked from ./commlink.sqlite. It no longer authorizes anything.
+```
+
+Revoking a name that was never minted is an error rather than a no-op: a mistyped name
+would otherwise be indistinguishable from a token successfully revoked. Afterwards the
+name is free to mint again, and the replacement is a new token with a new id — so it
+starts with a fresh [rate-limit](#rate-limit) budget rather than inheriting whatever the
+revoked one had spent.
+
+One caveat: **a subscriber already holding an open stream keeps it.** A token is checked
+when a connection is made, not for as long as it is held, so a revoked subscriber stops
+only when it next reconnects. Restart the server to disconnect one immediately.
 
 Publishers and `/json` subscribers send the token as a header:
 

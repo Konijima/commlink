@@ -1,0 +1,42 @@
+/**
+ * List the tokens this server has issued.
+ *
+ *     pnpm token:list
+ *
+ * One token per line on stdout, tab-separated — id, name, and when it was minted — so
+ * `pnpm --silent token:list | cut -f2` names them for a script. The headings go to
+ * stderr, like every other word these commands print that is not data.
+ *
+ * No token and no hash is shown, because neither is stored in a form that could be:
+ * a token is recoverable only from whoever it was given to.
+ */
+import { TokenStore } from '../tokens.js';
+import { DB_PATH, failWith, type Fail } from './common.js';
+
+const fail: Fail = failWith('token:list');
+
+if (process.argv.length > 2) fail('usage: token:list');
+
+/** A minting time as an ISO 8601 instant in UTC. Whole seconds, so no fraction shows. */
+function minted(unixSeconds: number): string {
+  return new Date(unixSeconds * 1000).toISOString().replace('.000Z', 'Z');
+}
+
+const tokens = new TokenStore(DB_PATH);
+try {
+  const issued = tokens.list();
+
+  // A fresh install authorizes nobody, which looks exactly like this. Say so, rather
+  // than let an empty stdout read as a command that did not run.
+  if (issued.length === 0) {
+    console.error(`No tokens in ${DB_PATH}. Mint one with: token:create <name>`);
+  } else {
+    console.error(`${issued.length} token(s) in ${DB_PATH}:`);
+    console.error('ID\tNAME\tMINTED');
+    for (const token of issued) {
+      console.log(`${token.id}\t${token.name}\t${minted(token.createdAt)}`);
+    }
+  }
+} finally {
+  tokens.close();
+}
