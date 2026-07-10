@@ -99,9 +99,9 @@ The self-hostable pub/sub core.
       value; a missing file reads straight from the environment as before; a malformed one
       aborts the boot naming the line, rather than running on a default the operator meant
       to change. Comments are whole-line and a value may be quoted to keep spaces or a `#`.
-- [ ] Lint and format: no linter or formatter is configured, so `CONTRIBUTING.md` cannot
-      point contributors at one and CI checks only types and tests. Add ESLint and
-      Prettier, a `lint` script, and a CI step that runs it.
+- [x] Lint and format: ESLint (typescript-eslint) and Prettier are configured, with a
+      `pnpm lint` script (ESLint + `prettier --check`) and a `pnpm format` script. CI runs
+      `pnpm -r lint`, and `CONTRIBUTING.md` points contributors at both.
 - [ ] Structured logging with pino.
 - [x] Test suite (vitest): publish→subscribe roundtrip, replay-since, auth rejection,
       rate limit.

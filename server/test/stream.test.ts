@@ -234,7 +234,9 @@ describe('GET /:topic/json', () => {
       const response = await subscribe(`${encodeURIComponent(topic)}/json`);
 
       expect(response.status).toBe(400);
-      expect(((await response.json()) as { error: string }).error).toMatch(/^topic must be/);
+      expect(((await response.json()) as { error: string }).error).toMatch(
+        /^topic must be/,
+      );
       expect(broker.listenerCount(topic)).toBe(0);
     },
   );
@@ -374,12 +376,17 @@ describe('GET /:topic/json', () => {
       const response = await subscribe('alpha,bad.topic/json');
 
       expect(response.status).toBe(400);
-      expect(((await response.json()) as { error: string }).error).toMatch(/^topic must be/);
+      expect(((await response.json()) as { error: string }).error).toMatch(
+        /^topic must be/,
+      );
       expect(broker.listenerCount('alpha')).toBe(0);
     });
 
     it('rejects an over-long list with 400', async () => {
-      const names = Array.from({ length: MAX_SUBSCRIBE_TOPICS + 1 }, (_, i) => `topic${i}`);
+      const names = Array.from(
+        { length: MAX_SUBSCRIBE_TOPICS + 1 },
+        (_, i) => `topic${i}`,
+      );
 
       const response = await subscribe(`${names.join(',')}/json`);
 

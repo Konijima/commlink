@@ -38,8 +38,12 @@ export class RateLimiter {
   /** Per token, the timestamps of its requests still inside the window, oldest first. */
   readonly #hits = new Map<number, number[]>();
 
-  constructor(limit: number = PUBLISH_RATE_LIMIT, windowMs: number = RATE_LIMIT_WINDOW_MS) {
-    if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError(RATE_LIMIT_CONFIG_RULE);
+  constructor(
+    limit: number = PUBLISH_RATE_LIMIT,
+    windowMs: number = RATE_LIMIT_WINDOW_MS,
+  ) {
+    if (!Number.isSafeInteger(limit) || limit < 1)
+      throw new RangeError(RATE_LIMIT_CONFIG_RULE);
     if (!Number.isSafeInteger(windowMs) || windowMs < 1) {
       throw new RangeError(RATE_LIMIT_CONFIG_RULE);
     }
@@ -83,10 +87,15 @@ export class RateLimiter {
  * exempting it from the limit is the one thing a rate limiter must never do.
  */
 export function publishRateLimit(limiter: RateLimiter) {
-  return async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply | void> => {
+  return async (
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ): Promise<FastifyReply | void> => {
     const { tokenId } = request;
     if (tokenId === undefined) {
-      throw new Error('the publish rate limiter ran before the request was authenticated');
+      throw new Error(
+        'the publish rate limiter ran before the request was authenticated',
+      );
     }
 
     const retryAfter = limiter.take(tokenId);

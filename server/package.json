@@ -11,6 +11,8 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
     "smoke": "node scripts/smoke.mjs",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
     "test": "vitest run",
     "token:create": "tsx src/cli/token-create.ts",
     "token:list": "tsx src/cli/token-list.ts",
@@ -23,11 +25,17 @@
     "fastify": "^5.2.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.10.5",
     "@types/ws": "^8.18.1",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^16.5.0",
+    "prettier": "^3.9.5",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
+    "typescript-eslint": "^8.63.0",
     "vitest": "^3.0.5",
     "ws": "^8.21.0"
   }

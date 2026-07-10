@@ -115,9 +115,7 @@ export class TokenStore {
     this.#has = this.#db.prepare(`SELECT 1 FROM tokens WHERE id = ?`);
     // `hash` is deliberately absent: nothing that reads a token out of this store
     // should have to decide whether it may be shown.
-    this.#list = this.#db.prepare(
-      `SELECT id, name, created_at FROM tokens ORDER BY id`,
-    );
+    this.#list = this.#db.prepare(`SELECT id, name, created_at FROM tokens ORDER BY id`);
     this.#revoke = this.#db.prepare(`DELETE FROM tokens WHERE name = ?`);
   }
 

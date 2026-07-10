@@ -29,5 +29,7 @@ try {
 // no `finally` — the database would be left open on exactly the path that reports an error.
 if (!revoked) fail(`no token named "${name}" in ${DB_PATH}`);
 
-console.error(`Token "${name}" revoked from ${DB_PATH}. It no longer authorizes anything.`);
+console.error(
+  `Token "${name}" revoked from ${DB_PATH}. It no longer authorizes anything.`,
+);
 console.error('An open subscriber keeps its stream until it disconnects.');

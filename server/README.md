@@ -126,11 +126,11 @@ curl -H "Authorization: Bearer $TOKEN" -d "hello" http://127.0.0.1:4500/mytopic
 
 Metadata travels in optional headers:
 
-| Header       | Default | Meaning                                                                    |
-| ------------ | ------- | -------------------------------------------------------------------------- |
-| `X-Title`    | none    | Notification title, UTF-8, at most 256 bytes. Blank is treated as absent.  |
-| `X-Priority` | `3`     | Integer `1`–`5`. Anything else is rejected.                                |
-| `X-Tags`     | none    | Up to 16 comma-separated UTF-8 tags of 64 bytes each; space is ignored.    |
+| Header       | Default | Meaning                                                                   |
+| ------------ | ------- | ------------------------------------------------------------------------- |
+| `X-Title`    | none    | Notification title, UTF-8, at most 256 bytes. Blank is treated as absent. |
+| `X-Priority` | `3`     | Integer `1`–`5`. Anything else is rejected.                               |
+| `X-Tags`     | none    | Up to 16 comma-separated UTF-8 tags of 64 bytes each; space is ignored.   |
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
@@ -373,12 +373,12 @@ Configuration comes from the process environment. A `.env` file is **not** loade
 set the variables in the shell or in your service manager (see
 [`../deploy/`](../deploy/)); [`.env.example`](./.env.example) previews the full set.
 
-| Variable          | Default              | Meaning                            | Status     |
-| ----------------- | -------------------- | ---------------------------------- | ---------- |
-| `PORT`            | `4500`               | Port to listen on.                 | Read now   |
-| `HOST`            | `127.0.0.1`          | Interface to bind.                 | Read now   |
-| `DB_PATH`         | `./commlink.sqlite`  | SQLite database: messages, tokens. | Read now   |
-| `RETENTION_HOURS` | `72`                 | How long cached messages are kept. | Read now   |
+| Variable          | Default             | Meaning                            | Status   |
+| ----------------- | ------------------- | ---------------------------------- | -------- |
+| `PORT`            | `4500`              | Port to listen on.                 | Read now |
+| `HOST`            | `127.0.0.1`         | Interface to bind.                 | Read now |
+| `DB_PATH`         | `./commlink.sqlite` | SQLite database: messages, tokens. | Read now |
+| `RETENTION_HOURS` | `72`                | How long cached messages are kept. | Read now |
 
 `RETENTION_HOURS` must be a whole number of hours, at least `1`. The server refuses to
 start on anything else rather than run with a window that would never expire a message.
@@ -388,12 +388,12 @@ see [`../deploy/`](../deploy/).
 
 ## API
 
-| Method | Path            | Auth            | Purpose                        |
-| ------ | --------------- | --------------- | ------------------------------ |
-| `GET`  | `/healthz`      | none            | Liveness probe (200 + uptime). |
-| `POST` | `/:topic`       | header          | Publish a message to a topic.  |
-| `GET`  | `/:topics/ws`   | header, `?auth=` | Subscribe over WebSocket.     |
-| `GET`  | `/:topics/json` | header, `?auth=` | Subscribe over plain HTTP.    |
+| Method | Path            | Auth             | Purpose                        |
+| ------ | --------------- | ---------------- | ------------------------------ |
+| `GET`  | `/healthz`      | none             | Liveness probe (200 + uptime). |
+| `POST` | `/:topic`       | header           | Publish a message to a topic.  |
+| `GET`  | `/:topics/ws`   | header, `?auth=` | Subscribe over WebSocket.      |
+| `GET`  | `/:topics/json` | header, `?auth=` | Subscribe over plain HTTP.     |
 
 All four are available now. Both subscribe routes take one topic or a comma-separated
 list of them, and both accept `?since=<unix_ts>` to replay the cache before streaming

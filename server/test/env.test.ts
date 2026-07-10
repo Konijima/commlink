@@ -104,7 +104,10 @@ describe('loadEnvFile', () => {
 
   it('does nothing for a missing file', () => {
     const env: NodeJS.ProcessEnv = {};
-    const result = loadEnvFile({ path: join(tmpdir(), 'commlink-does-not-exist', '.env'), env });
+    const result = loadEnvFile({
+      path: join(tmpdir(), 'commlink-does-not-exist', '.env'),
+      env,
+    });
 
     expect(env).toEqual({});
     expect(result).toEqual({ applied: [], skipped: [] });

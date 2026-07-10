@@ -74,8 +74,15 @@ describe('a header a client sent twice', () => {
   });
 
   /** Publish `hello` to `demo`, with `extra` header lines spelled out on the wire. */
-  const publish = (extra: string[], auth: string[] = [`Authorization: Bearer ${token}`]) =>
-    rawRequest(port, ['POST /demo HTTP/1.1', 'Host: 127.0.0.1', ...auth, ...extra], 'hello');
+  const publish = (
+    extra: string[],
+    auth: string[] = [`Authorization: Bearer ${token}`],
+  ) =>
+    rawRequest(
+      port,
+      ['POST /demo HTTP/1.1', 'Host: 127.0.0.1', ...auth, ...extra],
+      'hello',
+    );
 
   it('folds a repeated X-Title into one comma-joined value', async () => {
     const response = await publish(['X-Title: alpha', 'X-Title: beta']);

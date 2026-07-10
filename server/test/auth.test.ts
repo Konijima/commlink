@@ -56,7 +56,10 @@ describe('bearer-token auth', () => {
       ['an empty token', () => bearer('')],
       ['another scheme', () => ({ authorization: `Basic ${token}` })],
       ['no scheme at all', () => ({ authorization: token })],
-      ['a token the header splits in two', () => ({ authorization: `Bearer ${token} x` })],
+      [
+        'a token the header splits in two',
+        () => ({ authorization: `Bearer ${token} x` }),
+      ],
     ])('refuses a publish with %s', async (_name, headers) => {
       const res = await publish(headers());
 
@@ -181,7 +184,9 @@ describe('bearer-token auth', () => {
     }
 
     it('upgrades a socket carrying a valid token in the header', async () => {
-      await expect(opened(connect('/mytopic/ws', bearer(token)))).resolves.toBeUndefined();
+      await expect(
+        opened(connect('/mytopic/ws', bearer(token))),
+      ).resolves.toBeUndefined();
     });
 
     it('upgrades a socket carrying a valid token as ?auth=, which a browser must use', async () => {
@@ -199,13 +204,16 @@ describe('bearer-token auth', () => {
       ['an unissued token in the header', '/mytopic/ws', bearer(WRONG_TOKEN)],
       ['an unissued token as ?auth=', `/mytopic/ws?auth=${WRONG_TOKEN}`, {}],
       ['an empty ?auth=', '/mytopic/ws?auth=', {}],
-    ])('refuses the upgrade with %s, before the socket opens', async (_name, path, headers) => {
-      const socket = connect(path, headers as Record<string, string>);
+    ])(
+      'refuses the upgrade with %s, before the socket opens',
+      async (_name, path, headers) => {
+        const socket = connect(path, headers as Record<string, string>);
 
-      // A `401` to the handshake, not a WebSocket close frame: the socket never existed.
-      await expect(refusal(socket)).resolves.toBe(401);
-      expect(broker.listenerCount('mytopic')).toBe(0);
-    });
+        // A `401` to the handshake, not a WebSocket close frame: the socket never existed.
+        await expect(refusal(socket)).resolves.toBe(401);
+        expect(broker.listenerCount('mytopic')).toBe(0);
+      },
+    );
   });
 
   describe('an app with no tokens', () => {
@@ -297,7 +305,11 @@ describe('a revoked token', () => {
 
   it('can no longer open a stream', async () => {
     tokens.revoke('pixel');
-    const res = await app.inject({ method: 'GET', url: '/mytopic/json', headers: bearer(revoked) });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/mytopic/json',
+      headers: bearer(revoked),
+    });
 
     expect(res.statusCode).toBe(401);
     expect(broker.listenerCount('mytopic')).toBe(0);

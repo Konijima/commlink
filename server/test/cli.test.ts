@@ -16,7 +16,8 @@ const SERVER_DIR = fileURLToPath(new URL('..', import.meta.url));
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}\n$/;
 
 /** `id<TAB>name<TAB>2026-07-10T12:00:00Z` */
-const LISTING_PATTERN = /^(\d+)\t([A-Za-z0-9_-]+)\t(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)$/;
+const LISTING_PATTERN =
+  /^(\d+)\t([A-Za-z0-9_-]+)\t(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)$/;
 
 interface Outcome {
   status: number;
@@ -55,7 +56,11 @@ describe('the token commands', () => {
     } catch (error) {
       // A non-zero exit rejects, carrying everything the process managed to write.
       const failed = error as { code?: number; stdout?: string; stderr?: string };
-      return { status: failed.code ?? -1, stdout: failed.stdout ?? '', stderr: failed.stderr ?? '' };
+      return {
+        status: failed.code ?? -1,
+        stdout: failed.stdout ?? '',
+        stderr: failed.stderr ?? '',
+      };
     }
   }
 
@@ -140,7 +145,10 @@ describe('the token commands', () => {
 
       const rows = listed.stdout.trimEnd().split('\n');
       expect(rows).toHaveLength(2);
-      expect(rows.map((row) => LISTING_PATTERN.exec(row)?.[2])).toEqual(['pixel', 'laptop']);
+      expect(rows.map((row) => LISTING_PATTERN.exec(row)?.[2])).toEqual([
+        'pixel',
+        'laptop',
+      ]);
     });
 
     it('names each token by the id the rest of the server knows it as', async () => {

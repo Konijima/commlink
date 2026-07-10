@@ -49,7 +49,12 @@ if (!existsSync(ENTRYPOINT)) {
 const dataDir = await mkdtemp(join(tmpdir(), 'commlink-smoke-'));
 server = spawn(process.execPath, [ENTRYPOINT], {
   cwd: SERVER_DIR,
-  env: { ...process.env, HOST: '127.0.0.1', PORT: '0', DB_PATH: join(dataDir, 'smoke.sqlite') },
+  env: {
+    ...process.env,
+    HOST: '127.0.0.1',
+    PORT: '0',
+    DB_PATH: join(dataDir, 'smoke.sqlite'),
+  },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 

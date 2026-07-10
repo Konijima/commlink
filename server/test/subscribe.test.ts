@@ -88,7 +88,9 @@ describe('GET /:topic/ws', () => {
 
   function closeEvent(socket: WebSocket): Promise<{ code: number; reason: string }> {
     return new Promise((resolve) => {
-      socket.once('close', (code, reason) => resolve({ code, reason: reason.toString() }));
+      socket.once('close', (code, reason) =>
+        resolve({ code, reason: reason.toString() }),
+      );
     });
   }
 
@@ -315,7 +317,9 @@ describe('GET /:topic/ws', () => {
 
       const { take } = await collect('alpha/ws?since=0');
 
-      expect((await take(1)).map((frame) => frame.message)).toEqual(['the very first message']);
+      expect((await take(1)).map((frame) => frame.message)).toEqual([
+        'the very first message',
+      ]);
     });
 
     it('replays only the topics the client subscribed to', async () => {
@@ -325,7 +329,10 @@ describe('GET /:topic/ws', () => {
 
       const { take } = await collect(`alpha,beta/ws?since=${missed.timestamp}`);
 
-      expect((await take(2)).map((frame) => frame.message)).toEqual(['from alpha', 'from beta']);
+      expect((await take(2)).map((frame) => frame.message)).toEqual([
+        'from alpha',
+        'from beta',
+      ]);
     });
 
     it('replays nothing when the topic has no stored messages', async () => {
@@ -428,7 +435,10 @@ describe('GET /:topic/ws', () => {
     });
 
     it('closes an over-long list with 1008', async () => {
-      const names = Array.from({ length: MAX_SUBSCRIBE_TOPICS + 1 }, (_, i) => `topic${i}`);
+      const names = Array.from(
+        { length: MAX_SUBSCRIBE_TOPICS + 1 },
+        (_, i) => `topic${i}`,
+      );
       const socket = open(`${names.join(',')}/ws`);
 
       const { code, reason } = await closeEvent(socket);

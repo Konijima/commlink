@@ -20,6 +20,8 @@ cd server
 pnpm install
 pnpm test          # vitest
 pnpm typecheck     # tsc --noEmit
+pnpm lint          # eslint + prettier --check
+pnpm format        # prettier --write (rewrite files in place)
 pnpm dev           # run locally on http://127.0.0.1:4500
 pnpm build         # compile to dist/
 pnpm smoke         # boot the compiled server and check /healthz
@@ -48,7 +50,9 @@ small and atomic.
 ## Code style
 
 - TypeScript is strict; prefer explicit types at module boundaries.
-- Match the surrounding style. A linter and formatter are not set up yet (see `TODO.md`),
-  so `pnpm typecheck`, `pnpm test` and `pnpm smoke` are what CI enforces.
+- [ESLint](https://eslint.org) and [Prettier](https://prettier.io) enforce the style;
+  `pnpm lint` checks both and `pnpm format` rewrites files to match. CI runs `pnpm lint`
+  alongside `pnpm typecheck`, `pnpm test` and `pnpm smoke`, so run them before opening a
+  pull request.
 - No secrets in the repo — configuration comes from environment variables (see
   `server/.env.example`).
