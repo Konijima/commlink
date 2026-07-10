@@ -126,10 +126,13 @@ The self-hostable pub/sub core.
       query after the app is gone, which a closed connection cannot. Verified by mutation:
       dropping the ownership guard so the app always closes the store fails the injected
       message-store case.
-- [ ] Cover the refusal to start on a malformed `RETENTION_HOURS`. The parser and the app
-      builder each reject one, but nothing runs the server as a process and asserts it
-      exits non-zero with the reason on stderr — which is the behaviour an operator with a
-      bad config actually meets.
+- [x] Cover the refusal to start on a malformed `RETENTION_HOURS`. The parser and the app
+      builder each reject one; now `test/startup.test.ts` runs the entrypoint as its own
+      process and asserts it exits non-zero with the reason tagged on stderr — the
+      behaviour an operator with a bad config actually meets — for zero, a fraction, `1e3`,
+      `0x10`, a non-number and blank. A valid window paired with a bad `LOG_LEVEL` proves
+      the retention gate lets a good value through rather than refusing everything, and the
+      refusals all exit before a port is bound.
 - [ ] Test on the Node.js versions the docs promise. The READMEs say Node 20+, CI runs
       Node 22 only.
 - [ ] `deploy/`: a systemd unit and a TLS reverse-proxy (Caddy) snippet. Both files
