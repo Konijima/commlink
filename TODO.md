@@ -58,6 +58,11 @@ before the Android client is built against it.
 - [x] Bound the publish metadata headers: `X-Title` to 256 bytes, `X-Tags` to 16 tags of
       64 bytes each. Both are measured in the bytes that arrived, and an over-long one is
       rejected with `400` naming the rule rather than silently truncated.
+- [x] Make the backpressure suite deterministic (`BUGS.md#4`). The test that covers dropping
+      a stalled reader now watches the backlog the server actually holds, rather than
+      predicting it from how many messages filled an earlier connection — two sockets are
+      not buffered alike. It fails if a message delivery drops the reader first, so a green
+      run means the keepalive did the work the test names.
 - [x] Read `X-Title` and `X-Tags` as UTF-8 (`BUGS.md#2`), so an accented title is stored and
       delivered as it was sent. The headers carry raw UTF-8 bytes — no RFC 2047 encoding —
       and bytes that are not UTF-8 are rejected with `400` naming the rule. The byte limits
@@ -66,14 +71,6 @@ before the Android client is built against it.
 ## Server (v0.1)
 
 The self-hostable pub/sub core.
-
-### Fix first
-
-- [ ] Make the backpressure suite deterministic (`BUGS.md#4`). One test predicts how many
-      messages fill a second connection from what filled a first, and the kernel does not
-      buffer two sockets alike — so the suite is intermittently red, and green does not
-      always mean the behaviour was exercised. Until it is fixed a failing run cannot be
-      told apart from a real regression, which makes it worth more than any feature below.
 
 ### Auth & safety
 - [ ] Disconnect a subscriber whose token is revoked. A token is checked when a

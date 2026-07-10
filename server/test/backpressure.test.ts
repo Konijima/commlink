@@ -1,4 +1,4 @@
-import type { IncomingMessage } from 'node:http';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { get } from 'node:http';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -46,6 +46,33 @@ function sleep(ms: number): Promise<void> {
  * the subscriber, so a loop that counts publishes stops on the right one.
  */
 const SETTLE_MS = 5;
+
+/**
+ * Long enough that a socket still willing to take bytes has taken them. A large write
+ * sits in the server's queue for an instant on its way out, so a backlog only means a
+ * stalled reader once it has survived this.
+ */
+const DRAIN_MS = 25;
+
+/**
+ * The keepalive interval of the one test that fires the tick itself, rather than waiting
+ * for it. Any value does; this one is short enough to sleep past several of them cheaply,
+ * which is how that test shows no real timer is coming for its reader.
+ */
+const KEEPALIVE_MS = 25;
+
+/**
+ * Poll `predicate` on real timers. `vi.waitFor` advances whatever clock is installed,
+ * which would tick the keepalive the stalled-reader test means to fire by hand.
+ */
+async function waitUntil(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error(`condition still false after ${timeoutMs}ms`);
+    await sleep(SETTLE_MS);
+  }
+}
 
 describe('backpressure on GET /:topic/ws', () => {
   let app: FastifyInstance;
@@ -184,13 +211,20 @@ describe('backpressure on GET /:topic/json', () => {
   let app: FastifyInstance;
   let broker: Broker;
   let httpBase: string;
-  let responses: IncomingMessage[];
-  let tokens: TokenStore | undefined;
+  let readers: IncomingMessage[];
+  let held: ServerResponse[];
+  let tokens: TokenStore;
   let token: string;
 
+  /** Both ends of one `/json` stream. */
+  interface Stream {
+    /** The client's end. Pausing it is what stalls the reader. */
+    reader: IncomingMessage;
+    /** The server's end. Its `writableLength` is the backlog the limit is measured against. */
+    response: ServerResponse;
+  }
+
   async function start(keepaliveIntervalMs: number): Promise<void> {
-    // A restart mid-test builds a second app; the first one's tokens go with it.
-    tokens?.close();
     broker = new Broker();
     ({ app, tokens, token } = buildTestApp({
       broker,
@@ -198,30 +232,43 @@ describe('backpressure on GET /:topic/json', () => {
       maxBufferedBytes: SMALL_LIMIT,
       maxBodyBytes: BODY_LIMIT_OFF,
     }));
+
+    // The route hijacks this response and writes onto it directly, so it is also what
+    // the server measures the buffer limit against. Holding onto it lets a test read
+    // the backlog it built, rather than infer it from how many messages it took.
+    held = [];
+    app.addHook('onRequest', async (request, reply) => {
+      if (request.url.endsWith('/json')) held.push(reply.raw);
+    });
+
     httpBase = await app.listen({ port: 0, host: '127.0.0.1' });
   }
 
   beforeEach(() => {
-    responses = [];
+    readers = [];
   });
 
   afterEach(async () => {
-    for (const response of responses) response.destroy();
+    for (const reader of readers) reader.destroy();
     await app.close();
-    tokens?.close();
+    tokens.close();
+    vi.useRealTimers();
   });
 
-  async function openStream(topic: string): Promise<IncomingMessage> {
-    const response = await new Promise<IncomingMessage>((resolve, reject) => {
+  async function openStream(topic: string): Promise<Stream> {
+    const reader = await new Promise<IncomingMessage>((resolve, reject) => {
       const request = get(`${httpBase}/${topic}/json`, { headers: bearer(token) }, resolve);
       request.on('error', reject);
     });
-    responses.push(response);
+    readers.push(reader);
 
-    expect(response.statusCode).toBe(200);
-    await vi.waitFor(() => expect(broker.listenerCount(topic)).toBe(1));
+    expect(reader.statusCode).toBe(200);
+    await waitUntil(() => broker.listenerCount(topic) === 1);
 
-    return response;
+    const response = held.at(-1);
+    if (response === undefined) throw new Error('the server never saw the stream request');
+
+    return { reader, response };
   }
 
   async function publish(topic: string, body: string = PAYLOAD): Promise<void> {
@@ -245,12 +292,45 @@ describe('backpressure on GET /:topic/json', () => {
     throw new Error(`still subscribed after ${MAX_PUBLISHES} messages`);
   }
 
+  /**
+   * Publish until the server holds more for `response` than the limit allows, and is
+   * still holding it a moment later.
+   *
+   * The kernel's socket buffers absorb the first few megabytes, so the server's own
+   * queue does not grow until they are full; before that a large write sits above the
+   * limit for an instant on its way out. Only a backlog that survives `DRAIN_MS` means
+   * a reader that has genuinely stopped receiving.
+   *
+   * `send` weighs the backlog *before* it writes, so the write that carries a reader
+   * over the limit does not drop it. This never publishes to a reader already over the
+   * limit, so no message delivery can be what drops it — which leaves the keepalive.
+   */
+  async function fillUntilStalled(topic: string, response: ServerResponse): Promise<void> {
+    for (let sent = 1; sent <= MAX_PUBLISHES; sent += 1) {
+      await publish(topic);
+      await sleep(SETTLE_MS);
+
+      // Every publish above was made to a reader inside the limit, so none of them may
+      // have dropped it. One that did means `send` now weighs the backlog after writing
+      // rather than before — and the keepalive below would never get the chance to act.
+      if (broker.listenerCount(topic) === 0) {
+        throw new Error(`delivering message ${sent} dropped the reader; the fill must not`);
+      }
+
+      if (response.writableLength <= SMALL_LIMIT) continue;
+      await sleep(DRAIN_MS);
+      if (response.writableLength > SMALL_LIMIT) return;
+    }
+
+    throw new Error(`reader still draining after ${MAX_PUBLISHES} messages`);
+  }
+
   it('drops a reader that stops reading, detaching it from the broker', async () => {
     await start(KEEPALIVE_OFF_MS);
-    const response = await openStream('alpha');
+    const { reader } = await openStream('alpha');
 
     // An unread response fills its buffer and stops draining the socket.
-    response.pause();
+    reader.pause();
 
     await publishUntilDropped('alpha');
     expect(broker.listenerCount('alpha')).toBe(0);
@@ -258,43 +338,47 @@ describe('backpressure on GET /:topic/json', () => {
 
   it('keeps a reader that keeps up', async () => {
     await start(KEEPALIVE_OFF_MS);
-    const response = await openStream('alpha');
+    const { reader } = await openStream('alpha');
 
     let bytes = 0;
-    response.on('data', (chunk: Buffer) => {
+    reader.on('data', (chunk: Buffer) => {
       bytes += chunk.length;
     });
 
     for (let sent = 0; sent < 10; sent += 1) await publish('alpha');
 
     await vi.waitFor(() => expect(bytes).toBeGreaterThanOrEqual(10 * PAYLOAD.length));
-    expect(response.destroyed).toBe(false);
+    expect(reader.destroyed).toBe(false);
     expect(broker.listenerCount('alpha')).toBe(1);
   });
 
   it('drops a stalled reader once it stops receiving messages', async () => {
     // A stream has no pong to withhold: were it not for the keepalive's own check, a
-    // reader that stalls and then goes quiet would hold its backlog for good. Reaching
-    // that state takes knowing which message crosses the limit — it is the one before
-    // the message whose delivery drops the reader, so measure it, then stop one short.
-    await start(KEEPALIVE_OFF_MS);
-    const first = await openStream('alpha');
-    first.pause();
-    const untilDropped = await publishUntilDropped('alpha');
-    expect(untilDropped).toBeGreaterThan(1);
-    await app.close();
+    // reader that stalls and then goes quiet would hold its backlog for good — nothing
+    // arrives to run the delivery check. So the tick is what this test is about, and it
+    // fires it itself. Faking `setInterval` alone leaves the socket I/O below on real
+    // timers; the keepalive and the hourly retention sweep are its only callers.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
 
-    await start(25);
-    const second = await openStream('alpha');
-    second.pause();
+    await start(KEEPALIVE_MS);
+    const { reader, response } = await openStream('alpha');
+    reader.pause();
 
-    // One message short of the delivery check ever firing: the reader is over the limit
-    // and no further message will be delivered to it. Only the keepalive can drop it now.
-    for (let sent = 0; sent < untilDropped - 1; sent += 1) {
-      await publish('alpha');
-      await sleep(SETTLE_MS);
-    }
+    await fillUntilStalled('alpha', response);
 
-    await vi.waitFor(() => expect(broker.listenerCount('alpha')).toBe(0), { timeout: 2_000 });
+    // Both halves matter. Over the limit is the state the keepalive must act on; still
+    // attached is what makes this a test of the keepalive at all, since a reader already
+    // dropped by the delivery check would satisfy the assertion below on its own.
+    expect(response.writableLength).toBeGreaterThan(SMALL_LIMIT);
+    expect(broker.listenerCount('alpha')).toBe(1);
+
+    // And nothing else is coming for it: time passes, no tick, the reader stays.
+    await sleep(4 * KEEPALIVE_MS);
+    expect(broker.listenerCount('alpha')).toBe(1);
+
+    vi.advanceTimersByTime(KEEPALIVE_MS);
+
+    await waitUntil(() => broker.listenerCount('alpha') === 0);
+    expect(response.destroyed).toBe(true);
   });
 });

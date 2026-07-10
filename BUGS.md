@@ -13,7 +13,7 @@ Notes: <cause, workaround, or fix once known>
 
 ---
 
-### 4 — the backpressure suite is intermittently red   [open]   severity: high
+### 4 — the backpressure suite is intermittently red   [fixed]   severity: high
 Repro: run the suite enough times. It fails perhaps once in many runs, and more readily on
 a slow or busy machine. Seen on CI on a change that touched only `BUGS.md`:
 
@@ -54,6 +54,22 @@ CPUs, all green. Observed on CI, and the mechanism is legible in the source, so 
 on the evidence rather than held until it can be caught in the act.
 
 **A red run cannot be told apart from a real regression, so this outranks new work.**
+
+Fixed by having the test observe the backlog instead of predicting it. The server's own
+`ServerResponse` is now held by the test, so the fill publishes one message at a time and
+stops as soon as `writableLength` is over the limit and stays there — no count carries
+between connections, and the second connection is gone. Because `send` weighs the backlog
+*before* it writes, never publishing to a reader already over the limit means no message
+delivery can be what drops it; the fill fails loudly if one ever does, so the silent pass
+is now a failure. The keepalive is then the only thing left that can drop the reader, and
+the test fires its tick itself: `setInterval` alone is faked, leaving the socket I/O on
+real timers, so the drop no longer races a wall clock.
+
+Verified by mutation, since a green suite was the symptom. Removing the keepalive's own
+`dropIfBackedUp` check fails this test; making `send` weigh the backlog after writing
+rather than before fails the fill with `delivering message 1 dropped the reader`. The file
+was then run many times over, including batches launched at once to oversubscribe every
+core, all green.
 
 ### 3 — a reserved topic is refused with the wrong reason   [open]   severity: low
 Repro: subscribe to the one topic name the server keeps for itself.
