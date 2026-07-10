@@ -11,12 +11,20 @@ import {
   parseTags,
   parseTitle,
 } from './message';
+import { MessageStore } from './store';
 import { registerStreamRoute } from './stream';
 import { registerSubscribeRoute } from './subscribe';
 
 export interface AppOptions {
   /** Injectable so tests can watch the fan-out the routes share. */
   broker?: Broker;
+  /**
+   * Where published messages are persisted. Defaults to a throwaway in-memory store,
+   * so a caller that wants messages to outlive the process passes one built on a file
+   * — as `server.ts` does. A store passed in is the caller's to close; one created
+   * here is closed with the app.
+   */
+  store?: MessageStore;
   /** How often subscriber connections are pinged. Shortened by the keepalive tests. */
   keepaliveIntervalMs?: number;
   /**
@@ -42,6 +50,12 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     routerOptions: { maxParamLength: MAX_TOPIC_LIST_LENGTH },
   });
   const broker = options.broker ?? new Broker();
+
+  const store = options.store ?? new MessageStore();
+  if (options.store === undefined) {
+    app.addHook('onClose', async () => store.close());
+  }
+
   const subscriberOptions = {
     keepaliveIntervalMs: options.keepaliveIntervalMs,
     maxBufferedBytes: options.maxBufferedBytes,
@@ -93,6 +107,10 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       tags: parseTags(headerValue(request.headers['x-tags'])),
     });
 
+    // Store before fanning out. A message a live subscriber has already seen must
+    // also be one a reconnecting subscriber can replay, and a write that fails should
+    // fail the publish rather than deliver a message that was never recorded.
+    store.append(message);
     broker.publish(message);
 
     return reply.code(200).send(message);

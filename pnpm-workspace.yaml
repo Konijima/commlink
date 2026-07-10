@@ -1,7 +1,10 @@
 packages:
   - server
 
-# esbuild (used by vitest/tsx) ships prebuilt platform binaries; allow its
-# install script so pnpm does not warn/fail on ignored build scripts.
+# These ship prebuilt platform binaries fetched by an install script, which pnpm
+# refuses to run unless the package is named here.
+#   esbuild        — used by vitest and tsx
+#   better-sqlite3 — the server's message store
 allowBuilds:
   esbuild: true
+  better-sqlite3: true

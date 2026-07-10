@@ -19,10 +19,12 @@ coverage/
 *.token
 tokens.env
 
-# SQLite databases
+# SQLite databases, including the write-ahead log and shared-memory sidecars
 *.sqlite
 *.sqlite3
 *.db
+*-wal
+*-shm
 
 # Android
 android/local.properties
