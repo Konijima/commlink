@@ -2,10 +2,10 @@ import Fastify from 'fastify';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
-import { buildApp } from '../src/app';
-import { Broker } from '../src/broker';
-import { everyInterval } from '../src/keepalive';
-import type { Message } from '../src/message';
+import { buildApp } from '../src/app.js';
+import { Broker } from '../src/broker.js';
+import { everyInterval } from '../src/keepalive.js';
+import type { Message } from '../src/message.js';
 
 /**
  * Short enough that a test finishes in milliseconds, long enough that a slow machine

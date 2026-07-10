@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { WebSocket } from 'ws';
-import { buildApp } from '../src/app';
-import { Broker } from '../src/broker';
-import { MAX_SUBSCRIBE_TOPICS, SINCE_RULE, TOPIC_LIST_RULE } from '../src/message';
-import type { Message } from '../src/message';
+import { buildApp } from '../src/app.js';
+import { Broker } from '../src/broker.js';
+import { MAX_SUBSCRIBE_TOPICS, SINCE_RULE, TOPIC_LIST_RULE } from '../src/message.js';
+import type { Message } from '../src/message.js';
 
 describe('GET /:topic/ws', () => {
   let app: FastifyInstance;

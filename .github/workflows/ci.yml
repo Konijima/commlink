@@ -34,3 +34,11 @@ jobs:
 
       - name: Test
         run: pnpm -r test
+
+      - name: Build
+        run: pnpm -r build
+
+      # Typecheck and test resolve imports for us; only Node's own loader can say
+      # whether the built server actually starts.
+      - name: Boot the built server
+        run: pnpm -C server smoke

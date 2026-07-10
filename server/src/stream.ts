@@ -1,11 +1,11 @@
 import type { ServerResponse } from 'node:http';
 import type { FastifyInstance } from 'fastify';
-import { MAX_BUFFERED_BYTES } from './backpressure';
-import type { Broker } from './broker';
-import { KEEPALIVE_INTERVAL_MS, everyInterval } from './keepalive';
-import type { Message } from './message';
-import { parseSince, parseTopicList } from './message';
-import type { MessageStore } from './store';
+import { MAX_BUFFERED_BYTES } from './backpressure.js';
+import type { Broker } from './broker.js';
+import { KEEPALIVE_INTERVAL_MS, everyInterval } from './keepalive.js';
+import type { Message } from './message.js';
+import { parseSince, parseTopicList } from './message.js';
+import type { MessageStore } from './store.js';
 
 export interface StreamOptions {
   /** How often an idle stream is sent a blank line. Shortened by the keepalive tests. */

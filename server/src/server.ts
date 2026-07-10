@@ -1,5 +1,5 @@
-import { buildApp } from './app';
-import { MessageStore } from './store';
+import { buildApp } from './app.js';
+import { MessageStore } from './store.js';
 
 // The server binds loopback by default; expose it through a TLS reverse proxy
 // rather than binding a public interface directly (see deploy/).

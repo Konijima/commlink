@@ -1,15 +1,15 @@
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
-import { buildApp } from '../src/app';
-import { Broker } from '../src/broker';
+import { buildApp } from '../src/app.js';
+import { Broker } from '../src/broker.js';
 import {
   MAX_SUBSCRIBE_TOPICS,
   MAX_TOPIC_LENGTH,
   SINCE_RULE,
   TOPIC_LIST_RULE,
-} from '../src/message';
-import type { Message } from '../src/message';
+} from '../src/message.js';
+import type { Message } from '../src/message.js';
 
 describe('GET /:topic/json', () => {
   let app: FastifyInstance;

@@ -23,7 +23,13 @@ pnpm install
 pnpm test          # vitest
 pnpm typecheck     # tsc --noEmit
 pnpm dev           # start on http://127.0.0.1:4500
+pnpm build         # compile to dist/
+pnpm smoke         # boot the compiled server and check /healthz
 ```
+
+`pnpm start` runs the compiled server from `dist/`, which is what a service unit should
+invoke. `pnpm smoke` builds nothing — it starts `dist/` on a free port with a throwaway
+database and fails if the process dies or `/healthz` is unhealthy.
 
 ```bash
 curl http://127.0.0.1:4500/healthz

@@ -62,9 +62,9 @@ The self-hostable pub/sub core.
 - [ ] Test suite (vitest): publish→subscribe roundtrip, replay-since, auth rejection,
       rate limit. The roundtrip and replay-since halves exist; auth and rate limit
       arrive with those features.
-- [ ] CI builds the server and boots the built output. It runs only `typecheck` and
-      `test` today, which is why `BUGS.md#1` — the built server cannot start — went
-      unnoticed: both `pnpm dev` and the tests resolve imports the built output cannot.
+- [x] CI builds the server and boots the built output (`pnpm smoke`). It ran only
+      `typecheck` and `test`, which is why `BUGS.md#1` — the built server cannot start —
+      went unnoticed: both `pnpm dev` and the tests resolve imports the built output cannot.
 - [ ] Cover the gap where `?since=` replay meets the per-connection buffer limit. A
       replayed backlog is written through the same path as a live message, so a large
       replay to a slow subscriber can drop the connection mid-replay. The behaviour is
@@ -75,8 +75,8 @@ The self-hostable pub/sub core.
 - [ ] Test on the Node.js versions the docs promise. The READMEs say Node 20+, CI runs
       Node 22 only.
 - [ ] `deploy/`: a systemd unit and a TLS reverse-proxy (Caddy) snippet. Both files
-      exist; the unit stays unchecked until the built server can actually start it
-      (`BUGS.md#1`) and it has been run end-to-end.
+      exist and the built server now starts (`BUGS.md#1`), but the unit stays unchecked
+      until it has been run end-to-end.
 
 ## Android app (v0.2)
 
