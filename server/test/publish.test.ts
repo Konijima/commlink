@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { buildApp } from '../src/app';
-import { Broker } from '../src/broker';
-import type { Message } from '../src/message';
-import { MessageStore } from '../src/store';
+import { buildApp } from '../src/app.js';
+import { Broker } from '../src/broker.js';
+import type { Message } from '../src/message.js';
+import { MessageStore } from '../src/store.js';
 
 describe('POST /:topic', () => {
   let app: FastifyInstance;

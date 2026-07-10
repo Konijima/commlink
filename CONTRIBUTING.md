@@ -21,7 +21,13 @@ pnpm install
 pnpm test          # vitest
 pnpm typecheck     # tsc --noEmit
 pnpm dev           # run locally on http://127.0.0.1:4500
+pnpm build         # compile to dist/
+pnpm smoke         # boot the compiled server and check /healthz
 ```
+
+`pnpm dev` and `pnpm test` run the TypeScript sources through a loader that resolves
+imports more leniently than Node does. `pnpm smoke` starts the compiled output, which
+is the only check that catches a build that compiles but cannot start.
 
 New server behaviour should land with tests. Keep the dependency surface small — this
 project intentionally avoids heavy frameworks and proprietary services.
@@ -43,6 +49,6 @@ small and atomic.
 
 - TypeScript is strict; prefer explicit types at module boundaries.
 - Match the surrounding style. A linter and formatter are not set up yet (see `TODO.md`),
-  so `pnpm typecheck` and `pnpm test` are what CI enforces.
+  so `pnpm typecheck`, `pnpm test` and `pnpm smoke` are what CI enforces.
 - No secrets in the repo — configuration comes from environment variables (see
   `server/.env.example`).

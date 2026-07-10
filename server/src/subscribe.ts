@@ -1,11 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
-import { MAX_BUFFERED_BYTES } from './backpressure';
-import type { Broker } from './broker';
-import { KEEPALIVE_INTERVAL_MS, everyInterval } from './keepalive';
-import type { Message } from './message';
-import { parseSince, parseTopicList } from './message';
-import type { MessageStore } from './store';
+import { MAX_BUFFERED_BYTES } from './backpressure.js';
+import type { Broker } from './broker.js';
+import { KEEPALIVE_INTERVAL_MS, everyInterval } from './keepalive.js';
+import type { Message } from './message.js';
+import { parseSince, parseTopicList } from './message.js';
+import type { MessageStore } from './store.js';
 
 /**
  * RFC 6455 close code for a message that violates the endpoint's policy. Sent when

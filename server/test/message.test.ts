@@ -7,7 +7,7 @@ import {
   TOPIC_LIST_RULE,
   parseSince,
   parseTopicList,
-} from '../src/message';
+} from '../src/message.js';
 
 /**
  * The longest list the server accepts: every topic slot filled to the maximum name

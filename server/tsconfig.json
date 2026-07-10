@@ -1,8 +1,12 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ES2022",
-    "moduleResolution": "Bundler",
+    // The package is `"type": "module"`, so the emitted output is loaded by Node's ESM
+    // loader, which resolves a relative import only if it carries a file extension.
+    // NodeNext emits the specifier unchanged *and* requires the extension in source,
+    // so `typecheck` fails on an import the built server could not resolve.
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "lib": ["ES2022"],
     "types": ["node"],
     "strict": true,

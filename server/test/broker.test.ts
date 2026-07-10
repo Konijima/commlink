@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { Broker } from '../src/broker';
-import { createMessage } from '../src/message';
-import type { Message } from '../src/message';
+import { Broker } from '../src/broker.js';
+import { createMessage } from '../src/message.js';
+import type { Message } from '../src/message.js';
 
 function message(topic: string, text = 'hello'): Message {
   return createMessage({ topic, message: text, title: null, priority: 3, tags: [] });

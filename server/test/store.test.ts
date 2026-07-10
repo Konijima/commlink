@@ -2,8 +2,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { Message } from '../src/message';
-import { MessageStore } from '../src/store';
+import type { Message } from '../src/message.js';
+import { MessageStore } from '../src/store.js';
 
 let counter = 0;
 

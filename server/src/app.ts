@@ -1,6 +1,6 @@
 import fastifyWebsocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { Broker } from './broker';
+import { Broker } from './broker.js';
 import {
   MAX_TOPIC_LIST_LENGTH,
   TOPIC_RULE,
@@ -10,10 +10,10 @@ import {
   parsePriority,
   parseTags,
   parseTitle,
-} from './message';
-import { MessageStore } from './store';
-import { registerStreamRoute } from './stream';
-import { registerSubscribeRoute } from './subscribe';
+} from './message.js';
+import { MessageStore } from './store.js';
+import { registerStreamRoute } from './stream.js';
+import { registerSubscribeRoute } from './subscribe.js';
 
 export interface AppOptions {
   /** Injectable so tests can watch the fan-out the routes share. */

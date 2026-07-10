@@ -3,9 +3,9 @@ import { get } from 'node:http';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
-import { buildApp } from '../src/app';
-import { Broker } from '../src/broker';
-import type { Message } from '../src/message';
+import { buildApp } from '../src/app.js';
+import { Broker } from '../src/broker.js';
+import type { Message } from '../src/message.js';
 
 /**
  * Small enough that a single message dwarfs it once the connection stops draining.

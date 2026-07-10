@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import type { Message } from './message';
+import type { Message } from './message.js';
 
 /** Open a database that lives only as long as the process. */
 export const IN_MEMORY = ':memory:';
