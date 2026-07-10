@@ -55,7 +55,7 @@ publisher ──HTTP POST──►  commlink server  ──WebSocket──►  A
 
 ## Quick start (server)
 
-Requirements: Node.js 20+ and [pnpm](https://pnpm.io).
+Requirements: Node.js 22+ and [pnpm](https://pnpm.io).
 
 ```bash
 cd server

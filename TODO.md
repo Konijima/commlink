@@ -133,8 +133,15 @@ The self-hostable pub/sub core.
       `0x10`, a non-number and blank. A valid window paired with a bad `LOG_LEVEL` proves
       the retention gate lets a good value through rather than refusing everything, and the
       refusals all exit before a port is bound.
-- [ ] Test on the Node.js versions the docs promise. The READMEs say Node 20+, CI runs
-      Node 22 only.
+- [x] Test on the Node.js versions the docs promise. CI now runs the full suite (typecheck,
+      lint, test, build, boot) on a matrix rather than one version, with `fail-fast` off so
+      one version's failure cannot mask another's. Adding Node 20 to the matrix surfaced that
+      the docs promised a floor the toolchain cannot meet: the pinned pnpm refuses to run on
+      anything below Node 22.13, so `pnpm install` fails outright on Node 20 and the "Node 20+"
+      requirement was never true. Corrected the floor to Node 22 in the READMEs, `CONTRIBUTING`
+      and `engines`; the matrix pins 22 (the real floor) and 24 (the current LTS). A single
+      matrix-independent `verify` job gates on all legs, so branch protection keeps one stable
+      required check as versions come and go.
 - [ ] `deploy/`: a systemd unit and a TLS reverse-proxy (Caddy) snippet. Both files
       exist and the built server now starts (`BUGS.md#1`), but the unit stays unchecked
       until it has been run end-to-end.

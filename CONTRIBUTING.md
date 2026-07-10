@@ -13,7 +13,7 @@ The repository is a monorepo:
 
 ### Server
 
-Requirements: Node.js 20+ and [pnpm](https://pnpm.io).
+Requirements: Node.js 22+ and [pnpm](https://pnpm.io).
 
 ```bash
 cd server
