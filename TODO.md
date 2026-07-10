@@ -74,6 +74,13 @@ before the Android client is built against it.
       the `/json` stream (`400`) and on the `/ws` upgrade (close `1008`) alike, while a
       bad-alphabet name still cites the alphabet. The alphabet is checked first, so an
       over-long name never reaches the reserved message.
+- [x] Reject a publish body that is not UTF-8 with `400`, the same rule `X-Title` and
+      `X-Tags` already keep. The body is the message text a subscriber is shown, but was
+      read with a lossy decode that mapped an invalid byte to a U+FFFD replacement and
+      delivered the mangled result silently — the header bug (`BUGS.md#2`) in a quieter
+      place. It is now decoded strictly while the body is read, before the token is
+      checked (like the size limit), so a non-UTF-8 body is refused naming the rule and is
+      never stored or delivered, while an accented body round-trips unchanged.
 
 ## Server (v0.1)
 

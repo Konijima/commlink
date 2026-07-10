@@ -120,7 +120,7 @@ have to: a service manager, an uptime checker, a container orchestrator.
 ## Publishing
 
 Anything you `POST` to `/:topic` becomes a message on that topic. The request body is
-the message text, taken verbatim — a JSON body is not reshaped.
+the message text, taken verbatim as UTF-8 — a JSON body is not reshaped.
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" -d "hello" http://127.0.0.1:4500/mytopic
@@ -206,6 +206,22 @@ An over-long publish therefore hears `413` even with no credentials at all — t
 refuses to hold a large body for a client it has not yet authenticated. Nothing is
 stored, nothing reaches subscribers, and the token is charged nothing against its
 rate limit.
+
+### Body encoding
+
+The body is UTF-8, the same as `X-Title` and `X-Tags`: send the bytes of the message you
+want delivered. Bytes that are not UTF-8 are rejected with `400` rather than delivered as
+U+FFFD replacements — the body is the notification itself, so a mangled one is the wrong
+notification:
+
+```bash
+curl -i -H "Authorization: Bearer $TOKEN" --data-binary $'Caf\xe9' http://127.0.0.1:4500/mytopic
+# HTTP/1.1 400 Bad Request
+# {"error":"message body must be valid UTF-8"}
+```
+
+Like the size check, this happens while the body is read: an ill-encoded publish is
+refused before the token is looked at, and nothing is stored or delivered.
 
 ### Rate limit
 
