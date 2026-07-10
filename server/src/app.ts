@@ -1,5 +1,6 @@
 import fastifyWebsocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance } from 'fastify';
+import { registerAuth } from './auth.js';
 import { Broker } from './broker.js';
 import {
   MAX_TOPIC_LIST_LENGTH,
@@ -15,6 +16,7 @@ import { registerRetention } from './retention.js';
 import { MessageStore } from './store.js';
 import { registerStreamRoute } from './stream.js';
 import { registerSubscribeRoute } from './subscribe.js';
+import { TokenStore } from './tokens.js';
 
 export interface AppOptions {
   /** Injectable so tests can watch the fan-out the routes share. */
@@ -26,6 +28,12 @@ export interface AppOptions {
    * here is closed with the app.
    */
   store?: MessageStore;
+  /**
+   * The tokens that authorize publishing and subscribing. Defaults to a throwaway
+   * in-memory store, which holds none, so an app built without one authorizes nothing.
+   * Ownership follows `store`: a store passed in is the caller's to close.
+   */
+  tokens?: TokenStore;
   /** How often subscriber connections are pinged. Shortened by the keepalive tests. */
   keepaliveIntervalMs?: number;
   /** How long a message stays replayable, in hours. Defaults to 72. */
@@ -60,6 +68,15 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   if (options.store === undefined) {
     app.addHook('onClose', async () => store.close());
   }
+
+  const tokens = options.tokens ?? new TokenStore();
+  if (options.tokens === undefined) {
+    app.addHook('onClose', async () => tokens.close());
+  }
+
+  // Before any route handler: a request that cannot authenticate reaches neither a
+  // topic parser nor a WebSocket upgrade.
+  registerAuth(app, tokens);
 
   registerRetention(app, store, {
     retentionHours: options.retentionHours,

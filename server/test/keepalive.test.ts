@@ -2,10 +2,11 @@ import Fastify from 'fastify';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
-import { buildApp } from '../src/app.js';
 import { Broker } from '../src/broker.js';
 import { everyInterval } from '../src/keepalive.js';
 import type { Message } from '../src/message.js';
+import type { TokenStore } from '../src/tokens.js';
+import { bearer, buildTestApp } from './helpers.js';
 
 /**
  * Short enough that a test finishes in milliseconds, long enough that a slow machine
@@ -56,10 +57,12 @@ describe('keepalive on GET /:topic/ws', () => {
   let httpBase: string;
   let wsBase: string;
   let sockets: WebSocket[];
+  let tokens: TokenStore;
+  let token: string;
 
   beforeEach(async () => {
     broker = new Broker();
-    app = buildApp({ broker, keepaliveIntervalMs: INTERVAL_MS });
+    ({ app, tokens, token } = buildTestApp({ broker, keepaliveIntervalMs: INTERVAL_MS }));
     sockets = [];
 
     httpBase = await app.listen({ port: 0, host: '127.0.0.1' });
@@ -69,11 +72,18 @@ describe('keepalive on GET /:topic/ws', () => {
   afterEach(async () => {
     for (const socket of sockets) socket.terminate();
     await app.close();
+    tokens.close();
   });
 
-  async function connect(topic: string): Promise<WebSocket> {
-    const socket = new WebSocket(`${wsBase}/${topic}/ws`);
+  /** Open a subscriber socket, authenticated the way a WebSocket client has to be. */
+  function open(path: string): WebSocket {
+    const socket = new WebSocket(`${wsBase}/${path}`, { headers: bearer(token) });
     sockets.push(socket);
+    return socket;
+  }
+
+  async function connect(topic: string): Promise<WebSocket> {
+    const socket = open(`${topic}/ws`);
 
     await new Promise<void>((resolve, reject) => {
       socket.once('open', () => resolve());
@@ -120,7 +130,11 @@ describe('keepalive on GET /:topic/ws', () => {
     const frame = new Promise<Message>((resolve) => {
       socket.once('message', (data) => resolve(JSON.parse(data.toString()) as Message));
     });
-    await fetch(`${httpBase}/alpha`, { method: 'POST', body: 'hello' });
+    await fetch(`${httpBase}/alpha`, {
+      method: 'POST',
+      headers: bearer(token),
+      body: 'hello',
+    });
 
     expect((await frame).message).toBe('hello');
   });
@@ -136,8 +150,7 @@ describe('keepalive on GET /:topic/ws', () => {
   });
 
   it('detaches every topic of a multiplexed subscriber that stops answering', async () => {
-    const socket = new WebSocket(`${wsBase}/alpha,beta/ws`);
-    sockets.push(socket);
+    const socket = open('alpha,beta/ws');
     await new Promise<void>((resolve) => socket.once('open', () => resolve()));
     await vi.waitFor(() => expect(broker.listenerCount('beta')).toBe(1));
 
@@ -153,8 +166,7 @@ describe('keepalive on GET /:topic/ws', () => {
   });
 
   it('does not ping a socket it refused', async () => {
-    const socket = new WebSocket(`${wsBase}/bad.topic/ws`);
-    sockets.push(socket);
+    const socket = open('bad.topic/ws');
     const pings = countPings(socket);
 
     await new Promise<void>((resolve) => socket.once('close', () => resolve()));
@@ -170,10 +182,12 @@ describe('keepalive on GET /:topic/json', () => {
   let httpBase: string;
   let controllers: AbortController[];
   let closed: boolean;
+  let tokens: TokenStore;
+  let token: string;
 
   beforeEach(async () => {
     broker = new Broker();
-    app = buildApp({ broker, keepaliveIntervalMs: INTERVAL_MS });
+    ({ app, tokens, token } = buildTestApp({ broker, keepaliveIntervalMs: INTERVAL_MS }));
     controllers = [];
     closed = false;
 
@@ -183,6 +197,7 @@ describe('keepalive on GET /:topic/json', () => {
   afterEach(async () => {
     for (const controller of controllers) controller.abort();
     await closeApp();
+    tokens.close();
   });
 
   async function closeApp(): Promise<void> {
@@ -196,7 +211,10 @@ describe('keepalive on GET /:topic/json', () => {
     const controller = new AbortController();
     controllers.push(controller);
 
-    const response = await fetch(`${httpBase}/${topic}/json`, { signal: controller.signal });
+    const response = await fetch(`${httpBase}/${topic}/json`, {
+      headers: bearer(token),
+      signal: controller.signal,
+    });
     expect(response.status).toBe(200);
     await vi.waitFor(() => expect(broker.listenerCount(topic.split(',')[0])).toBe(1));
 
@@ -221,7 +239,7 @@ describe('keepalive on GET /:topic/json', () => {
   }
 
   function publish(topic: string, body: string) {
-    return fetch(`${httpBase}/${topic}`, { method: 'POST', body });
+    return fetch(`${httpBase}/${topic}`, { method: 'POST', headers: bearer(token), body });
   }
 
   it('writes a blank line to an idle stream, repeatedly', async () => {

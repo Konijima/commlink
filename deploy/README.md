@@ -26,6 +26,19 @@ The unit points `DB_PATH` at a state directory outside the checkout. `DB_PATH` i
 resolved relative to `WorkingDirectory`, so a unit that leaves it unset writes the
 message database into the source tree — where a redeploy can wipe it.
 
+## Tokens
+
+A freshly deployed server authorizes nobody: every route but `/healthz` needs a bearer
+token, and the database starts with none. Mint one against the same `DB_PATH` the unit
+uses, before or after the first start:
+
+```bash
+DB_PATH=/path/to/state/commlink.sqlite node dist/cli/token-create.js pixel
+```
+
+The token is printed once. Keep it out of shell history and version control — the
+server stores only its hash and cannot recover it.
+
 ## TLS
 
 Point any reverse proxy that terminates TLS at `http://127.0.0.1:4500`. The included

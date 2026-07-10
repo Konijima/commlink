@@ -9,7 +9,7 @@ It is inspired by the architecture of [ntfy](https://ntfy.sh), kept deliberately
 minimal, and built to run on hardware you control.
 
 ```
-curl -d "Backup finished" https://your-server/backups
+curl -H "Authorization: Bearer $TOKEN" -d "Backup finished" https://your-server/backups
 ```
 
 > **Status:** early development. The server and app are being built in the open; see
@@ -23,6 +23,8 @@ curl -d "Backup finished" https://your-server/backups
   reverse proxy.
 - **Simple to publish.** Any HTTP client works: `curl`, a cron job, a shell script,
   a webhook.
+- **Closed by default.** Publishing and subscribing both need a bearer token you mint
+  yourself. A server with no tokens minted authorizes nobody.
 - **Reliable delivery.** Every message is stored server-side, and a subscriber that
   reconnects with `?since=<unix_ts>` is sent what it missed, so a flaky connection does
   not lose a notification. Messages are kept for 72 hours and then swept, so the
@@ -58,15 +60,16 @@ Requirements: Node.js 20+ and [pnpm](https://pnpm.io).
 ```bash
 cd server
 pnpm install
-pnpm test          # run the test suite
-pnpm dev           # start the server on http://127.0.0.1:4500
+pnpm test                     # run the test suite
+TOKEN=$(pnpm --silent token:create me)   # mint a token; it is shown once
+pnpm dev                      # start the server on http://127.0.0.1:4500
 ```
 
 Check it is alive, then publish a message:
 
 ```bash
 curl http://127.0.0.1:4500/healthz
-curl -d "hello" http://127.0.0.1:4500/mytopic
+curl -H "Authorization: Bearer $TOKEN" -d "hello" http://127.0.0.1:4500/mytopic
 ```
 
 See [`server/README.md`](./server/README.md) for configuration and the full API, and

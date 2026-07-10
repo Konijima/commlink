@@ -3,9 +3,10 @@ import { get } from 'node:http';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
-import { buildApp } from '../src/app.js';
 import { Broker } from '../src/broker.js';
 import type { Message } from '../src/message.js';
+import type { TokenStore } from '../src/tokens.js';
+import { bearer, buildTestApp } from './helpers.js';
 
 /**
  * Small enough that a single message dwarfs it once the connection stops draining.
@@ -45,10 +46,16 @@ describe('backpressure on GET /:topic/ws', () => {
   let httpBase: string;
   let wsBase: string;
   let sockets: WebSocket[];
+  let tokens: TokenStore;
+  let token: string;
 
   async function start(maxBufferedBytes?: number): Promise<void> {
     broker = new Broker();
-    app = buildApp({ broker, keepaliveIntervalMs: KEEPALIVE_OFF_MS, maxBufferedBytes });
+    ({ app, tokens, token } = buildTestApp({
+      broker,
+      keepaliveIntervalMs: KEEPALIVE_OFF_MS,
+      maxBufferedBytes,
+    }));
     httpBase = await app.listen({ port: 0, host: '127.0.0.1' });
     wsBase = httpBase.replace(/^http/, 'ws');
   }
@@ -60,11 +67,18 @@ describe('backpressure on GET /:topic/ws', () => {
   afterEach(async () => {
     for (const socket of sockets) socket.terminate();
     await app.close();
+    tokens.close();
   });
 
-  async function connect(topic: string): Promise<WebSocket> {
-    const socket = new WebSocket(`${wsBase}/${topic}/ws`);
+  /** Open a subscriber socket, authenticated the way a WebSocket client has to be. */
+  function open(topic: string): WebSocket {
+    const socket = new WebSocket(`${wsBase}/${topic}/ws`, { headers: bearer(token) });
     sockets.push(socket);
+    return socket;
+  }
+
+  async function connect(topic: string): Promise<WebSocket> {
+    const socket = open(topic);
 
     await new Promise<void>((resolve, reject) => {
       socket.once('open', () => resolve());
@@ -76,7 +90,11 @@ describe('backpressure on GET /:topic/ws', () => {
   }
 
   async function publish(topic: string, body: string = PAYLOAD): Promise<void> {
-    const response = await fetch(`${httpBase}/${topic}`, { method: 'POST', body });
+    const response = await fetch(`${httpBase}/${topic}`, {
+      method: 'POST',
+      headers: bearer(token),
+      body,
+    });
     expect(response.status).toBe(200);
     await response.arrayBuffer();
   }
@@ -125,8 +143,7 @@ describe('backpressure on GET /:topic/ws', () => {
   it('drops only the stalled subscriber, leaving the others on the topic', async () => {
     await start(SMALL_LIMIT);
     const healthy = await connect('alpha');
-    const stalled = new WebSocket(`${wsBase}/alpha/ws`);
-    sockets.push(stalled);
+    const stalled = open('alpha');
     await new Promise<void>((resolve) => stalled.once('open', () => resolve()));
     await vi.waitFor(() => expect(broker.listenerCount('alpha')).toBe(2));
 
@@ -160,10 +177,18 @@ describe('backpressure on GET /:topic/json', () => {
   let broker: Broker;
   let httpBase: string;
   let responses: IncomingMessage[];
+  let tokens: TokenStore | undefined;
+  let token: string;
 
   async function start(keepaliveIntervalMs: number): Promise<void> {
+    // A restart mid-test builds a second app; the first one's tokens go with it.
+    tokens?.close();
     broker = new Broker();
-    app = buildApp({ broker, keepaliveIntervalMs, maxBufferedBytes: SMALL_LIMIT });
+    ({ app, tokens, token } = buildTestApp({
+      broker,
+      keepaliveIntervalMs,
+      maxBufferedBytes: SMALL_LIMIT,
+    }));
     httpBase = await app.listen({ port: 0, host: '127.0.0.1' });
   }
 
@@ -174,11 +199,12 @@ describe('backpressure on GET /:topic/json', () => {
   afterEach(async () => {
     for (const response of responses) response.destroy();
     await app.close();
+    tokens?.close();
   });
 
   async function openStream(topic: string): Promise<IncomingMessage> {
     const response = await new Promise<IncomingMessage>((resolve, reject) => {
-      const request = get(`${httpBase}/${topic}/json`, resolve);
+      const request = get(`${httpBase}/${topic}/json`, { headers: bearer(token) }, resolve);
       request.on('error', reject);
     });
     responses.push(response);
@@ -190,7 +216,11 @@ describe('backpressure on GET /:topic/json', () => {
   }
 
   async function publish(topic: string, body: string = PAYLOAD): Promise<void> {
-    const response = await fetch(`${httpBase}/${topic}`, { method: 'POST', body });
+    const response = await fetch(`${httpBase}/${topic}`, {
+      method: 'POST',
+      headers: bearer(token),
+      body,
+    });
     expect(response.status).toBe(200);
     await response.arrayBuffer();
   }

@@ -1,6 +1,7 @@
 import { buildApp } from './app.js';
 import { parseRetentionHours } from './retention.js';
 import { MessageStore } from './store.js';
+import { TokenStore } from './tokens.js';
 
 // The server binds loopback by default; expose it through a TLS reverse proxy
 // rather than binding a public interface directly (see deploy/).
@@ -17,7 +18,11 @@ try {
   process.exit(1);
 }
 
-const app = buildApp({ store: new MessageStore(DB_PATH), retentionHours });
+const app = buildApp({
+  store: new MessageStore(DB_PATH),
+  tokens: new TokenStore(DB_PATH),
+  retentionHours,
+});
 
 app
   .listen({ port: PORT, host: HOST })

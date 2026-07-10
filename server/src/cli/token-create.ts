@@ -1,0 +1,40 @@
+/**
+ * Mint a token that may publish to and subscribe from this server.
+ *
+ *     pnpm token:create pixel
+ *
+ * The token is printed once, on stdout and nowhere else — only its hash is stored, so
+ * a lost token is replaced rather than recovered. Everything else this prints goes to
+ * stderr, which is what makes `TOKEN=$(pnpm --silent token:create pixel)` work.
+ */
+import { TokenStore } from '../tokens.js';
+
+const DB_PATH = process.env.DB_PATH ?? './commlink.sqlite';
+
+function fail(message: string): never {
+  console.error(`token:create: ${message}`);
+  process.exit(1);
+}
+
+const name = process.argv[2];
+if (name === undefined || name.length === 0) {
+  fail('usage: token:create <name>');
+}
+if (process.argv.length > 3) {
+  fail('one name at a time');
+}
+
+// Creates the database if this runs before the server's first start, which is the
+// order an operator setting up a fresh install would naturally take.
+const tokens = new TokenStore(DB_PATH);
+try {
+  const token = tokens.create(name);
+
+  console.error(`Token "${name}" created in ${DB_PATH}. It is shown once:`);
+  console.log(token);
+  console.error('Store it now; only its hash was written down.');
+} catch (error) {
+  fail((error as Error).message);
+} finally {
+  tokens.close();
+}
