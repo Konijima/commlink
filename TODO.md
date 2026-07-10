@@ -112,10 +112,13 @@ The self-hostable pub/sub core.
 - [x] CI builds the server and boots the built output (`pnpm smoke`). It ran only
       `typecheck` and `test`, which is why `BUGS.md#1` — the built server cannot start —
       went unnoticed: both `pnpm dev` and the tests resolve imports the built output cannot.
-- [ ] Cover the gap where `?since=` replay meets the per-connection buffer limit. A
-      replayed backlog is written through the same path as a live message, so a large
-      replay to a slow subscriber can drop the connection mid-replay. The behaviour is
-      unpinned by any test.
+- [x] Cover the gap where `?since=` replay meets the per-connection buffer limit. A
+      replayed backlog is written through the same path as a live message, so a replay
+      too large to hand a subscriber that is not keeping up now provably drops it
+      partway through rather than growing the heap without bound — on both `/ws` and
+      `/json` — while a reader that drains still gets the whole backlog. Pinned by
+      `test/replay-backpressure.test.ts`, and verified by mutation: removing the drop
+      check fails both drop tests.
 - [ ] Cover who owns a store: the app closes a message store or a token store it created
       itself, and leaves an injected one open. Nothing tests either half for either store,
       and closing a database twice is a no-op, so a regression would pass the suite.
