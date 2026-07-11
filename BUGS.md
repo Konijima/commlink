@@ -13,6 +13,114 @@ Notes: <cause, workaround, or fix once known>
 
 ---
 
+### 25 — the systemd unit's `%h` paths do not follow the `User=` the deploy guide tells you to add   [open]   severity: high
+Repro: follow `deploy/README.md`'s note on running as a system unit — copy
+`commlink-server.service` to `/etc/systemd/system/`, add `User=commlink`, and leave the
+`%h` paths as shipped, since the guide says they "resolve against that account rather than
+your home". The service never starts: it dies with a `CHDIR` error.
+
+Notes: `%h` is the home directory of the *service manager*, not of `User=`. For the system
+manager it is always `/root`, and systemd's own documentation says in so many words that it
+"is not influenced by the `User=` setting". So `WorkingDirectory=%h/commlink/server` becomes
+`/root/commlink/server` — where the checkout is not, and which an unprivileged `User=` cannot
+enter anyway. The guide's own sentence is the bug: the `%h` paths must be *replaced* with
+absolute ones for a system unit, not merely "adjusted". (`%S` does resolve usefully — to
+`/var/lib` — but for the manager-scoped reason, not the account-scoped one the guide gives.)
+
+Same theme as #14–#21: an absolute claim that is true only under a condition the doc did not
+state — here, that the manager is the *user* manager, which is the guide's primary path.
+
+### 24 — a token minted with the command the server's own warning names lands in the wrong database, under the deploy guide's unit   [open]   severity: medium
+Repro: deploy with the shipped unit, which sets `DB_PATH` through `Environment=`. Every
+request is refused with `401`, so read the log, find the startup warning, and run exactly
+the command it names:
+
+```
+pnpm token:create pixel      # writes ./commlink.sqlite in the checkout
+# the service reads the unit's DB_PATH — which still holds no tokens
+```
+
+Notes: `Environment=DB_PATH=…` in the unit exists in the *service's* environment and nowhere
+else, so a token command run from the operator's shell never sees it and falls back to the
+default `./commlink.sqlite` (`server/src/dbpath.ts`). `deploy/README.md` gets this right in
+its own instructions — it sets `DB_PATH=` inline — but `NO_TOKENS_WARNING`
+(`server/src/app.ts`) names the bare command, and that warning is what an operator staring at
+a `401` actually acts on. The outcome is #19 and #21's again: a server that authorizes nobody,
+holding a token that works nowhere.
+
+Related, same file: the guide says a token may be minted "before or after the first start",
+but the unit's `StateDirectory=` only creates the state directory *at* first start, and SQLite
+will not create a missing parent — so minting first fails with a raw "directory does not exist"
+error that names no setting.
+
+### 23 — the `/json` docs promise a `400` for an over-long topic list, which is a `414`   [open]   severity: low
+Repro: subscribe to a topic segment longer than the router's limit (about 3.2 KB).
+
+```
+curl -i -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:4500/$(head -c 4000 </dev/zero | tr '\0' a)/json"
+HTTP/1.1 414 URI Too Long
+{"error":"subscribe to at most 50 topics of at most 64 characters each"}
+```
+
+Notes: `server/README.md` says "an invalid or over-long topic list is rejected with `400`
+before the stream opens". A list of 51 *short* topics is indeed a `400` from the route, but a
+list long enough to overrun `maxParamLength` never reaches the route at all: the router
+refuses it and the `frameworkErrors` hook answers `414` (`server/src/app.ts`), which is the
+behaviour #7 and #10 deliberately built and `test/stream.test.ts` pins. The same over-claim
+covers the socket: the README says an invalid topic "closes the socket with `1008`", but an
+over-long one is refused with a plain HTTP `414` before any upgrade, so a client told to read
+the reason off the close event never gets a close event. Docs, not behaviour — but it is a
+status code a client would branch on.
+
+### 22 — a `HEAD` on the `/json` stream wedged the connection and left a subscriber behind   [fixed]   severity: medium
+Repro: ask for the stream route's headers on a connection that is then reused — what an HTTP
+agent with `keepAlive`, a proxy's upstream pool, or a monitoring probe that reuses its socket
+all do. Send a `HEAD` and then any second request on the same connection:
+
+```
+HEAD /mytopic/json HTTP/1.1        GET /healthz HTTP/1.1
+authorization: Bearer <TOKEN>      authorization: Bearer <TOKEN>
+
+HTTP/1.1 200 OK                       <- the HEAD is answered
+content-type: application/x-ndjson
+cache-control: no-store
+x-accel-buffering: no
+Connection: keep-alive
+
+   <- and then nothing, forever: /healthz behind it is never answered
+```
+
+`curl -I … --next …` reproduces it too, and hangs past even its own `--max-time`.
+
+Notes: the stream is declared as a `GET`, and Fastify exposes a `HEAD` for every `GET` by
+default — running the same handler. That handler hijacks the socket and writes a response
+that never ends, which is exactly right for a stream and ruinous for a `HEAD`: Node sends no
+body for one, so every line written to it was discarded, and the response was never completed.
+Node writes responses on a connection in order, so everything queued behind that response
+waited on it forever.
+
+It leaked as well as wedged. The handler subscribed the response to the broker, and nothing
+could ever detach it: the sweep drops a reader whose backlog grows past the limit, and a
+response whose writes are all discarded never buffers a byte. The subscriber sat on the topic
+for as long as the connection lived, receiving messages that went nowhere.
+
+Fixed by answering `HEAD` with a handler of its own (`server/src/stream.ts`), and telling
+Fastify not to clone the `GET` onto it (`exposeHeadRoute: false`, so the pair cannot drift
+back together if the two are ever reordered). A `HEAD` asks what a `GET` would answer with, so
+it answers exactly that — the stream's headers, the same `400` for a topic the stream would
+refuse — and then does the one thing the stream never does: it ends. It subscribes to nothing,
+because nothing can be delivered to it. The headers are shared with the `GET` in one constant
+so the two cannot describe different responses.
+
+Pinned by `test/streamhead.test.ts`, which drives a raw socket rather than `fetch` — `fetch`
+resolves a `HEAD` as soon as the headers land and then discards the connection, which hides
+the wedge. Both halves are red against the old code: the request behind the `HEAD` times out,
+and the broker is left holding one listener. Verified against the compiled server: before the
+fix a `GET /healthz` sent behind a `HEAD` on the same connection never arrived; after it, the
+same connection answers `200 {"status":"ok"}`, the `HEAD` returns the stream's own headers
+(`content-type: application/x-ndjson`, `cache-control: no-store`, `x-accel-buffering: no`)
+with no body, and the `GET` stream still streams a published message.
+
 ### 21 — `DB_PATH=:memory:` was documented as an ephemeral server, but such a server authorizes nobody   [fixed]   severity: medium
 Repro: follow the docs — the README and `.env.example` both offered `:memory:` as a
 deliberately ephemeral server — then try to use one.

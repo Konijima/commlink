@@ -42,6 +42,16 @@ export function registerStreamRoute(
   const intervalMs = options.keepaliveIntervalMs ?? KEEPALIVE_INTERVAL_MS;
   const maxBufferedBytes = options.maxBufferedBytes ?? MAX_BUFFERED_BYTES;
 
+  // The headers the stream answers with, shared with the `HEAD` below so the two cannot
+  // drift: a `HEAD` is a `GET` without the content, and these are the content's terms.
+  const STREAM_HEADERS = {
+    'content-type': 'application/x-ndjson',
+    'cache-control': 'no-store',
+    // Reverse proxies buffer a response body by default, which would hold every
+    // line back until the stream ends — that is, until never.
+    'x-accel-buffering': 'no',
+  };
+
   // Every open response, against the token id that authorized it — so the sweep can end
   // one whose token has been revoked. A streaming response is also never idle, so the
   // HTTP server would wait on it forever while shutting down; the same set is what the
@@ -93,9 +103,50 @@ export function registerStreamRoute(
     }
   });
 
-  app.get<{ Params: { topic: string }; Querystring: { since?: string } }>(
+  // Answer `HEAD` ourselves. Fastify exposes a `HEAD` for every `GET` by default, running
+  // the same handler — and this handler hijacks the socket to write a response that never
+  // ends, which is right for a stream and ruinous for a `HEAD`. Node sends no body for one,
+  // so every line the stream wrote would be discarded, the backlog could never grow, and
+  // the sweep that drops a stalled reader would have nothing to weigh: the subscriber would
+  // sit on the broker for as long as the connection lived. Worse, the response never
+  // completed, and Node writes responses on a connection in order — so every request behind
+  // it on a pooled or keep-alive connection waited forever.
+  //
+  // A `HEAD` asks what a `GET` would answer with, so answer exactly that: the stream's
+  // headers, refused for the same topics, and then — the one thing the stream itself never
+  // does — end. Nothing is subscribed, because nothing can be delivered.
+  app.head<{ Params: { topic: string }; Querystring: { since?: string } }>(
     '/:topic/json',
     (request, reply) => {
+      try {
+        parseTopicList(request.params.topic);
+        parseSince(request.query.since);
+      } catch (error) {
+        // The reason rides on `error` for a `GET`. A `HEAD` has no body to carry it, so
+        // the status is what a client gets; Fastify sizes the headers for the body it
+        // would have sent, and Node withholds the body itself.
+        reply.code(400).send({ error: (error as Error).message });
+        return;
+      }
+
+      reply.hijack();
+
+      const response = reply.raw;
+      // Not `reply.send()`: that would declare `content-length: 0`, which claims a `GET`
+      // here answers with an empty body. It answers with an unbounded one.
+      response.writeHead(200, STREAM_HEADERS);
+      response.end();
+    },
+  );
+
+  app.route<{ Params: { topic: string }; Querystring: { since?: string } }>({
+    method: 'GET',
+    url: '/:topic/json',
+    // Do not clone this handler onto `HEAD`: the one above is this route's, written for
+    // a request that carries no body. Declaring it first is enough for Fastify to leave
+    // the pair alone, but saying so here does not depend on the order the two are read in.
+    exposeHeadRoute: false,
+    handler: (request, reply) => {
       let topics: string[];
       let since: number | null;
       try {
@@ -111,13 +162,7 @@ export function registerStreamRoute(
       reply.hijack();
 
       const response = reply.raw;
-      response.writeHead(200, {
-        'content-type': 'application/x-ndjson',
-        'cache-control': 'no-store',
-        // Reverse proxies buffer a response body by default, which would hold every
-        // line back until the stream ends — that is, until never.
-        'x-accel-buffering': 'no',
-      });
+      response.writeHead(200, STREAM_HEADERS);
       response.flushHeaders();
       // Auth refuses any stream without a token before this handler runs, so every
       // reader here carries one; the sweep re-checks that id to catch a revocation.
@@ -149,5 +194,5 @@ export function registerStreamRoute(
         for (const message of store.since(topics, since)) send(message);
       }
     },
-  );
+  });
 }
