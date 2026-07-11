@@ -132,6 +132,37 @@ describe('request logging', () => {
     expect(lines.join('')).not.toContain(NO_TOKENS_WARNING);
   });
 
+  it('logs the forwarded Host but not the forwarded client address', async () => {
+    const { lines, stream } = capturingStream();
+    tokens = new TokenStore();
+    app = buildApp({ tokens, logger: buildLoggerOptions('info', stream) });
+    await app.ready();
+
+    // Behind the reverse proxy documented in deploy/nginx.conf: the request arrives from
+    // the proxy, carrying the client's original host and address in the standard forwarded
+    // headers. The server trusts no proxy headers, so `request.ip` is the connecting peer
+    // (the proxy) rather than X-Forwarded-For — this pins the behavior deploy/nginx.conf's
+    // comment describes, so flipping on proxy trust later without updating that doc fails here.
+    await app.inject({
+      method: 'GET',
+      url: '/healthz',
+      remoteAddress: '10.0.0.1',
+      headers: {
+        host: 'push.example.com',
+        'x-forwarded-for': '203.0.113.9',
+        'x-real-ip': '203.0.113.9',
+        'x-forwarded-proto': 'https',
+      },
+    });
+
+    const output = lines.join('');
+    // The forwarded Host reaches the request log.
+    expect(output).toContain('"host":"push.example.com"');
+    // The logged remote address is the proxy, not the forwarded client address.
+    expect(output).toContain('"remoteAddress":"10.0.0.1"');
+    expect(output).not.toContain('203.0.113.9');
+  });
+
   it('logs when delivering a message to a subscriber throws', async () => {
     const { lines, stream } = capturingStream();
     tokens = new TokenStore();
