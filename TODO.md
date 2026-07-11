@@ -168,8 +168,10 @@ The self-hostable pub/sub core.
       matrix-independent `verify` job gates on all legs, so branch protection keeps one stable
       required check as versions come and go.
 - [ ] `deploy/`: a systemd unit and a TLS reverse-proxy (Caddy) snippet. Both files
-      exist and the built server now starts (`BUGS.md#1`), but the unit stays unchecked
-      until it has been run end-to-end.
+      exist and the built server now starts (`BUGS.md#1`). The unit carries a baseline of
+      process sandboxing, with stronger filesystem isolation documented and commented for
+      hosts that support it; both the unit and its sandboxing stay unchecked until they
+      have been run end-to-end and confirmed with `systemd-analyze security`.
 
 ## Android app (v0.2)
 
