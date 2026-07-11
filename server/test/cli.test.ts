@@ -196,6 +196,13 @@ describe('the token commands', () => {
       expect(revoked.status).toBe(0);
       expect(revoked.stderr).toContain('pixel');
 
+      // The guidance must match what the server actually does: an open subscriber is
+      // swept off within a keepalive interval, so no restart is needed. It used to claim
+      // the opposite — that a subscriber keeps its stream until it disconnects and a
+      // restart is required — which contradicted the revocation sweep (see revocation.test.ts).
+      expect(revoked.stderr).toContain('no restart needed');
+      expect(revoked.stderr).not.toContain('until it disconnects');
+
       expect(inspect((tokens) => tokens.verify(pixel))).toBe(false);
       expect(inspect((tokens) => tokens.verify(laptop))).toBe(true);
       expect(inspect((tokens) => tokens.list().map((record) => record.name))).toEqual([
