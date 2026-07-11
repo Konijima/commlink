@@ -146,4 +146,36 @@ describe('publish body encoding', () => {
     expect(listener).not.toHaveBeenCalled();
     expect(store.since(['mytopic'], 0)).toEqual([]);
   });
+
+  it('does not charge a non-UTF-8 body to the rate limit', async () => {
+    // The body is decoded while it is read — before the auth hook names a token and
+    // before the limiter that would charge it runs. So a non-UTF-8 publish is refused
+    // (400) having spent no budget, the same as an over-long one (413, pinned by
+    // `bodylimit.test.ts`) and an unauthenticated one (401). One slot per token, so a
+    // charged refusal would leave nothing for the valid publish that follows.
+    const limited = buildTestApp({ publishRateLimit: 1 });
+    await limited.app.listen({ host: '127.0.0.1', port: 0 });
+    const limitedPort = (limited.app.server.address() as net.AddressInfo).port;
+
+    try {
+      const refused = await rawPublish(
+        limitedPort,
+        limited.token,
+        Buffer.from([0x43, 0x61, 0x66, 0xe9]),
+      );
+      expect(refused.status).toBe(400);
+      expect(JSON.parse(refused.body)).toEqual({ error: BODY_ENCODING_RULE });
+
+      // The token's one slot is still there to spend.
+      const ok = await rawPublish(
+        limitedPort,
+        limited.token,
+        Buffer.from('hello', 'utf8'),
+      );
+      expect(ok.status).toBe(200);
+    } finally {
+      await limited.app.close();
+      limited.tokens.close();
+    }
+  });
 });

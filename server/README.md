@@ -239,10 +239,16 @@ The window slides, so the limit is 60 publishes in any 60 seconds rather than 60
 clock minute — a client cannot spend its budget at the end of one minute and again at
 the start of the next.
 
-Every attempt is charged, including one the server goes on to reject with `400`: a
-publisher looping on a malformed request is exactly the flood the limit exists to stop.
-A request that fails to authenticate is not charged, because it named no token to
-charge. Each token has its own budget, so a noisy publisher cannot spend a quiet one's.
+Every attempt that reaches the limiter is charged, including one the handler goes on to
+reject with `400` — a malformed `X-Priority`, a reserved topic name: a publisher looping
+on a malformed request is exactly the flood the limit exists to stop.
+
+What is _not_ charged is a request turned away before the limiter, which runs just after
+authentication. A request that fails to authenticate spends nothing — it named no token to
+charge — and so does a body refused while it is read, before the token is looked at: an
+over-long one (`413`) or one that is not UTF-8 (`400`), exactly as the size and encoding
+sections above note. Each token has its own budget, so a noisy publisher cannot spend a
+quiet one's.
 
 Subscribing is not limited. A subscriber holds one long-lived connection, and the
 reconnect it makes after a dropped one is the request it can least afford to have
