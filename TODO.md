@@ -87,11 +87,17 @@ before the Android client is built against it.
 The self-hostable pub/sub core.
 
 ### Docs & deployment accuracy
-- [ ] Split the `log_format` snippet in `deploy/nginx.conf` so it can be uncommented where it is
-      written (`BUGS.md#26`). `log_format` is an `http`-context directive sitting inside
+- [x] Split the `log_format` snippet in `deploy/nginx.conf` so it can be uncommented where it is
+      written (`BUGS.md#26`). `log_format` is an `http`-context directive that sat inside
       `location /`, so an operator following the comment — the one remedy offered for keeping a
-      `?auth=` token out of the proxy log — gets `nginx: [emerg] … not allowed here` and no proxy
-      at all. The `map` block a few lines above already carries the note this one needs.
+      `?auth=` token out of the proxy log — got `nginx: [emerg] … not allowed here` and no proxy
+      at all. The definition now sits at the file's top level (the `http` context), beside the
+      `map` block and carrying the same note about why it cannot live deeper; only the
+      `access_log` that names the format stays in the location, where it is legal and covers the
+      routes whose URL carries the token. `test/deploynginx.test.ts` parses the shipped config
+      and refuses an http-only directive inside a `server` or `location` — commented or live,
+      since a commented directive is uncommented verbatim — and refuses an `access_log` naming a
+      format the file does not define, which is the same dead proxy from the other half alone.
 - [ ] Settle whether `?auth=` authenticates a `HEAD` of the `/json` stream (`BUGS.md#27`). It
       authenticates a `GET` of the same URL but not a `HEAD`, because the check keys on the
       method under the reasoning that subscribing is exactly the `GET` routes — which stopped
