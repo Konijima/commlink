@@ -24,5 +24,42 @@ Environment=RETENTION_HOURS=72
 Restart=on-failure
 RestartSec=5
 
+# --- Sandboxing (see deploy/README.md) ---------------------------------------
+# Narrow what the service may do if it is ever compromised. These are seccomp- and
+# rlimit-based, not mount-namespace-based, so they apply to a `systemctl --user`
+# unit too — without the unprivileged user-namespace support the stronger,
+# filesystem-level options below need. The server neither elevates privileges, nor
+# creates namespaces, nor uses realtime scheduling, so none of these constrain it.
+NoNewPrivileges=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallArchitectures=native
+
+# Stronger filesystem and kernel isolation. These rely on mount namespacing, which a
+# system unit always has but a `systemctl --user` unit can set up only where
+# unprivileged user namespaces are enabled — so they are left commented rather than
+# breaking the user-service path documented in the README. Uncomment for a system
+# unit (or a user host that supports them) and confirm with `systemd-analyze security
+# commlink-server.service`. ProtectHome is system-unit-only: a user unit's checkout,
+# and its %S state directory, live under the home it would hide.
+#ProtectSystem=strict
+#ProtectHome=read-only
+#PrivateTmp=true
+#PrivateDevices=true
+#ProtectKernelTunables=true
+#ProtectKernelModules=true
+#ProtectKernelLogs=true
+#ProtectControlGroups=true
+#ProtectClock=true
+#ProtectHostname=true
+#ProtectProc=invisible
+#RestrictAddressFamilies=AF_INET AF_INET6
+#CapabilityBoundingSet=
+#SystemCallFilter=@system-service
+# MemoryDenyWriteExecute is deliberately omitted: it breaks the V8 JIT the server
+# runs on.
+
 [Install]
 WantedBy=default.target

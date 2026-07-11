@@ -55,6 +55,24 @@ The unit points `DB_PATH` at a state directory outside the checkout. `DB_PATH` i
 resolved relative to `WorkingDirectory`, so a unit that leaves it unset writes the
 message database into the source tree — where a redeploy can wipe it.
 
+### Sandboxing
+
+The unit ships with a baseline of systemd's process sandboxing turned on:
+`NoNewPrivileges`, `RestrictSUIDSGID`, `RestrictRealtime`, `RestrictNamespaces`,
+`LockPersonality` and `SystemCallArchitectures=native`. These are seccomp- and
+rlimit-based rather than mount-namespace-based, so they apply to a `systemctl --user`
+unit as readily as a system one, and the server — which never elevates privileges,
+creates namespaces, or uses realtime scheduling — runs unaffected.
+
+Stronger, filesystem-level isolation (`ProtectSystem=strict`, `PrivateTmp`, the
+`Protect*` kernel options, and friends) is included **commented out**, because it
+relies on mount namespacing: a system unit always has it, but a `systemctl --user`
+unit can set it up only where unprivileged user namespaces are enabled, and enabling
+it unconditionally would break the user-service path on hosts without them. For a
+system unit — or a user host that supports it — uncomment that block and confirm the
+result with `systemd-analyze security commlink-server.service`. `MemoryDenyWriteExecute`
+is left off entirely: it breaks the JIT the Node runtime depends on.
+
 ## Tokens
 
 A freshly deployed server authorizes nobody: every route but `/healthz` needs a bearer
