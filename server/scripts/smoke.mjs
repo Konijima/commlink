@@ -38,7 +38,9 @@ function fail(message) {
     console.error(output.trimEnd());
     console.error('---------------------');
   }
-  // There is no graceful shutdown yet, so there is nothing to wait for.
+  // Force-kill rather than the default SIGTERM: the server does shut down gracefully on
+  // SIGTERM now, but a smoke run that has already failed wants the child gone at once, not
+  // a drain to wait on.
   server?.kill('SIGKILL');
   process.exit(1);
 }
