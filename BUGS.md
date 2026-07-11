@@ -13,6 +13,57 @@ Notes: <cause, workaround, or fix once known>
 
 ---
 
+### 9 — a non-upgrade GET to a subscribe socket returned an empty 404   [fixed]   severity: low
+Repro: request the WebSocket route over plain HTTP, without upgrading — a browser opening
+the URL, an uptime check, or a reverse proxy that dropped the `Upgrade` header:
+
+```
+curl -i -H "Authorization: Bearer $TOKEN" http://127.0.0.1:4500/mytopic/ws
+HTTP/1.1 404 Not Found
+    <- empty body, no content-type
+```
+
+Notes: the route was declared WebSocket-only, so the framework installed its own HTTP
+fallback for a request that never upgraded — a bare `404` with no body. Because the route
+*matched*, the server's not-found handler (which answers in the `{ "error": … }` shape)
+never ran, so this one response broke the promise that every unexpected reply names its
+reason on `error`. It is also the exact failure a mis-set proxy produces, where an empty
+body left nothing to explain the broken subscription.
+
+Fixed by giving the route an explicit HTTP handler alongside its WebSocket one, so a
+non-upgrade `GET /:topic/ws` now answers `404 {"error":"not found"}` like every other
+refusal, while the upgrade path is unchanged. Pinned by a test that requests the route
+without upgrading; mutation-checked against the old empty 404.
+
+### 8 — a body refused before authentication is not charged to the rate limit   [open]   severity: low
+Repro: with a low publish rate limit, POST a body that is not UTF-8, or one over 4096
+bytes, repeatedly with a valid token. Each is refused (`400`/`413`), but none counts
+against the token's budget — whereas a `400` from a bad `X-Priority` header does count.
+The rate-limit docs say "every attempt is charged, including one the server goes on to
+reject with 400".
+
+Notes: the body is validated as it is read, before the hook that charges the rate limit
+runs — the same ordering that lets an over-long body be refused before the token is looked
+at. So a body the server rejects that early names no token to charge, which is defensible
+(such a client is refused every request regardless, and the limit exists to protect
+subscribers from *delivered* floods, which these never become). The rough edge is the
+blanket "every 400 is charged" wording, which is not literally true for a body rejected
+pre-auth. The likely fix is to reconcile the docs rather than move the limiter ahead of
+body parsing.
+
+### 7 — an over-long subscribe topic list leaks the framework's default error shape   [open]   severity: low
+Repro: subscribe to a comma-separated list long enough to overrun the router's path-segment
+limit — 51 topics at the full 64-character length, about 3.3 KB of URL. The response is a
+`414` carrying the framework's default `{error,code,message}` body instead of the plain
+`{ "error": … }` shape and the "subscribe to at most 50 comma-separated topics" reason. A
+list of 51 *short* topics still gets that friendly `400`.
+
+Notes: the topic segment's length is capped by the router before any route runs, so an
+over-long one is answered by the framework's built-in `414`, which the server's error and
+not-found handlers do not cover. Very narrow — it needs a multi-kilobyte URL — but it is
+one more place a client cannot read the reason off `error`. A fix would normalize the `414`
+into the same `{ error }` shape.
+
 ### 6 — a graceful shutdown left the databases open   [fixed]   severity: low
 Repro: not externally observable in normal use. Start the server against a file `DB_PATH`,
 publish a message, then stop it with `SIGTERM`. The process exits `0`, but the SQLite
