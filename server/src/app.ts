@@ -33,6 +33,17 @@ import { TokenStore } from './tokens.js';
  */
 const BODY_ENCODING_CODE = 'COMMLINK_ERR_BODY_ENCODING';
 
+/**
+ * What the server logs at startup when its token store holds no tokens. A store with none
+ * authorizes nobody — `/healthz` answers, every publish and subscribe is refused with a
+ * `401` — which is the safe way to boot but looks, from the outside, exactly like a broken
+ * server. An operator who followed the README but has not yet run `pnpm token:create` sees
+ * only 401s with no hint why; this names the cause and the fix in the same structured log
+ * everything else rides, so the reason is one line away rather than a debugging session.
+ */
+export const NO_TOKENS_WARNING =
+  'no tokens exist: every publish and subscribe will be refused with 401 until one is created with `pnpm token:create <name>`';
+
 export interface AppOptions {
   /** Injectable so tests can watch the fan-out the routes share. */
   broker?: Broker;
@@ -127,6 +138,13 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   const tokens = options.tokens ?? new TokenStore();
   if (options.tokens === undefined) {
     app.addHook('onClose', async () => tokens.close());
+  }
+
+  // Warn once at build time if the store authorizes nobody. This is silent under the
+  // default `logger: false`, so the test suite's throwaway in-memory stores stay quiet;
+  // the entrypoint's real logger is where an operator running a fresh install sees it.
+  if (tokens.count() === 0) {
+    app.log.warn(NO_TOKENS_WARNING);
   }
 
   // Before any route handler: a request that cannot authenticate reaches neither a

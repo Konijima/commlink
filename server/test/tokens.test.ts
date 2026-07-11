@@ -188,6 +188,27 @@ describe('TokenStore', () => {
     });
   });
 
+  describe('count', () => {
+    it('is zero on a fresh store', () => {
+      expect(tokens.count()).toBe(0);
+    });
+
+    it('rises with each token minted', () => {
+      tokens.create('first');
+      expect(tokens.count()).toBe(1);
+      tokens.create('second');
+      expect(tokens.count()).toBe(2);
+    });
+
+    it('falls back to zero once every token is revoked', () => {
+      tokens.create('only');
+      expect(tokens.count()).toBe(1);
+
+      tokens.revoke('only');
+      expect(tokens.count()).toBe(0);
+    });
+  });
+
   describe('revoke', () => {
     it('reports that it revoked a token that existed', () => {
       tokens.create('pixel');
