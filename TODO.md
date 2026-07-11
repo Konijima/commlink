@@ -86,6 +86,20 @@ before the Android client is built against it.
 
 The self-hostable pub/sub core.
 
+### Docs & deployment accuracy
+- [ ] Replace the `%h` paths in the systemd unit for the system-unit path, and correct the
+      guide that says they follow `User=` (`BUGS.md#25`). They follow the service *manager*,
+      so a system unit run as a dedicated account looks for the checkout in `/root` and never
+      starts.
+- [ ] Point an operator at the database the server actually reads (`BUGS.md#24`). The startup
+      warning names `pnpm token:create <name>`, which under the shipped unit mints into the
+      checkout rather than the unit's `DB_PATH` — the same "authorizes nobody" outcome as the
+      two footguns before it. Also state that the state directory does not exist until the
+      first start, so a token cannot be minted before it.
+- [ ] Correct the status codes the subscribe docs promise for an over-long topic list
+      (`BUGS.md#23`): it is a `414` from the router, not the route's `400`, and on the socket
+      it arrives before the upgrade rather than as a `1008` close.
+
 ### Auth & safety
 - [x] Disconnect a subscriber whose token is revoked. A connection is authenticated
       once, at the upgrade, so a revoked subscriber used to keep its open stream until it

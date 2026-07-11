@@ -317,6 +317,11 @@ curl -sN -H "Authorization: Bearer $TOKEN" http://127.0.0.1:4500/deploys,alerts/
 
 An invalid or over-long topic list is rejected with `400` before the stream opens.
 
+`HEAD /:topic/json` answers with the headers that stream would send, and no body — the
+same `400` for a topic it would refuse. It subscribes to nothing and returns immediately,
+so a probe or a proxy health check can ask whether the route is there without opening a
+subscription it never intends to read.
+
 ### Catching up
 
 Both subscribe routes take `?since=<unix_ts>`, a time in whole seconds since the Unix
