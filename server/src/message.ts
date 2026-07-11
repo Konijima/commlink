@@ -16,6 +16,14 @@ export const MIN_PRIORITY = 1;
 export const MAX_PRIORITY = 5;
 export const DEFAULT_PRIORITY = 3;
 
+/**
+ * What publish tells a client whose `X-Priority` is not `1`–`5`. Named after the header
+ * the client set, like `TITLE_RULE` and `TAGS_RULE`, so a `400` read off `error` says
+ * which header to fix rather than leaving the client to infer that "priority" means the
+ * `X-Priority` it sent.
+ */
+export const PRIORITY_RULE = `X-Priority must be an integer ${MIN_PRIORITY}-${MAX_PRIORITY}`;
+
 export const MAX_TOPIC_LENGTH = 64;
 
 /** Topic names travel in URL paths, so keep them to an unambiguous alphabet. */
@@ -271,7 +279,7 @@ export function parsePriority(raw: string | undefined): number {
 
   const trimmed = raw.trim();
   if (!/^[1-5]$/.test(trimmed)) {
-    throw new RangeError(`priority must be an integer ${MIN_PRIORITY}-${MAX_PRIORITY}`);
+    throw new RangeError(PRIORITY_RULE);
   }
 
   return Number(trimmed);
