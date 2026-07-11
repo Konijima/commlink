@@ -97,6 +97,7 @@ export class TokenStore {
   readonly #find: Database.Statement<[hash: string]>;
   readonly #has: Database.Statement<[id: number]>;
   readonly #list: Database.Statement<[]>;
+  readonly #count: Database.Statement<[]>;
   readonly #revoke: Database.Statement<[name: string]>;
 
   /**
@@ -116,6 +117,7 @@ export class TokenStore {
     // `hash` is deliberately absent: nothing that reads a token out of this store
     // should have to decide whether it may be shown.
     this.#list = this.#db.prepare(`SELECT id, name, created_at FROM tokens ORDER BY id`);
+    this.#count = this.#db.prepare(`SELECT COUNT(*) AS n FROM tokens`);
     this.#revoke = this.#db.prepare(`DELETE FROM tokens WHERE name = ?`);
   }
 
@@ -154,6 +156,17 @@ export class TokenStore {
     const rows = this.#list.all() as TokenRow[];
 
     return rows.map((row) => ({ id: row.id, name: row.name, createdAt: row.created_at }));
+  }
+
+  /**
+   * How many tokens this server has issued. Zero is the state a fresh install boots in,
+   * where the store authorizes nobody, so the server can warn an operator that every
+   * request will be refused until they mint the first token — the one thing this count
+   * exists to answer, and cheaper than counting {@link list} at the caller.
+   */
+  count(): number {
+    const row = this.#count.get() as { n: number };
+    return row.n;
   }
 
   /**

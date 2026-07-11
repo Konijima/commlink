@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildApp } from '../src/app.js';
+import { NO_TOKENS_WARNING, buildApp } from '../src/app.js';
 import {
   DEFAULT_LOG_LEVEL,
   LOG_LEVELS,
@@ -106,5 +106,28 @@ describe('request logging', () => {
     await app.inject({ method: 'GET', url: '/healthz' });
 
     expect(lines.join('')).toContain('"url":"/healthz"');
+  });
+
+  it('warns at startup when the token store authorizes nobody', async () => {
+    const { lines, stream } = capturingStream();
+    // A store with no tokens refuses every publish and subscribe with a 401, which looks
+    // from the outside like a broken server. The warning names the cause and the fix.
+    tokens = new TokenStore();
+    app = buildApp({ tokens, logger: buildLoggerOptions('info', stream) });
+    await app.ready();
+
+    const output = lines.join('');
+    expect(output).toContain(NO_TOKENS_WARNING);
+    expect(output).toContain('"level":40'); // pino's numeric code for warn
+  });
+
+  it('stays quiet at startup once a token exists', async () => {
+    const { lines, stream } = capturingStream();
+    tokens = new TokenStore();
+    tokens.create('pixel');
+    app = buildApp({ tokens, logger: buildLoggerOptions('info', stream) });
+    await app.ready();
+
+    expect(lines.join('')).not.toContain(NO_TOKENS_WARNING);
   });
 });
