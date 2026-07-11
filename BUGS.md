@@ -35,21 +35,28 @@ non-upgrade `GET /:topic/ws` now answers `404 {"error":"not found"}` like every 
 refusal, while the upgrade path is unchanged. Pinned by a test that requests the route
 without upgrading; mutation-checked against the old empty 404.
 
-### 8 — a body refused before authentication is not charged to the rate limit   [open]   severity: low
+### 8 — a body refused before authentication is not charged to the rate limit   [fixed]   severity: low
 Repro: with a low publish rate limit, POST a body that is not UTF-8, or one over 4096
 bytes, repeatedly with a valid token. Each is refused (`400`/`413`), but none counts
 against the token's budget — whereas a `400` from a bad `X-Priority` header does count.
-The rate-limit docs say "every attempt is charged, including one the server goes on to
+The rate-limit docs said "every attempt is charged, including one the server goes on to
 reject with 400".
 
 Notes: the body is validated as it is read, before the hook that charges the rate limit
 runs — the same ordering that lets an over-long body be refused before the token is looked
 at. So a body the server rejects that early names no token to charge, which is defensible
 (such a client is refused every request regardless, and the limit exists to protect
-subscribers from *delivered* floods, which these never become). The rough edge is the
+subscribers from *delivered* floods, which these never become). The rough edge was the
 blanket "every 400 is charged" wording, which is not literally true for a body rejected
-pre-auth. The likely fix is to reconcile the docs rather than move the limiter ahead of
-body parsing.
+pre-auth.
+
+Fixed by reconciling the docs rather than moving the limiter ahead of body parsing, since
+the behaviour is the deliberate one. The server README's rate-limit section now says only a
+request that reaches the limiter — which runs just after authentication — is charged, and
+that a body refused while it is read (`413` over-long, `400` non-UTF-8) spends nothing, like
+an unauthenticated request. The over-long half was already pinned by `bodylimit.test.ts`;
+the non-UTF-8 half is now pinned by `bodyencoding.test.ts`, mutation-checked so that
+charging the refused body fails the test.
 
 ### 7 — an over-long subscribe topic list leaks the framework's default error shape   [fixed]   severity: low
 Repro: subscribe to a comma-separated list long enough to overrun the router's path-segment
