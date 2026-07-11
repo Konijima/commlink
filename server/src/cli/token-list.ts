@@ -11,27 +11,29 @@
  * a token is recoverable only from whoever it was given to.
  */
 import { TokenStore } from '../tokens.js';
-import { DB_PATH, failWith, type Fail } from './common.js';
+import { type Fail, failWith, resolveDbPath } from './common.js';
 
 const fail: Fail = failWith('token:list');
 
 if (process.argv.length > 2) fail('usage: token:list');
+
+const dbPath = resolveDbPath(fail);
 
 /** A minting time as an ISO 8601 instant in UTC. Whole seconds, so no fraction shows. */
 function minted(unixSeconds: number): string {
   return new Date(unixSeconds * 1000).toISOString().replace('.000Z', 'Z');
 }
 
-const tokens = new TokenStore(DB_PATH);
+const tokens = new TokenStore(dbPath);
 try {
   const issued = tokens.list();
 
   // A fresh install authorizes nobody, which looks exactly like this. Say so, rather
   // than let an empty stdout read as a command that did not run.
   if (issued.length === 0) {
-    console.error(`No tokens in ${DB_PATH}. Mint one with: token:create <name>`);
+    console.error(`No tokens in ${dbPath}. Mint one with: token:create <name>`);
   } else {
-    console.error(`${issued.length} token(s) in ${DB_PATH}:`);
+    console.error(`${issued.length} token(s) in ${dbPath}:`);
     console.error('ID\tNAME\tMINTED');
     for (const token of issued) {
       console.log(`${token.id}\t${token.name}\t${minted(token.createdAt)}`);

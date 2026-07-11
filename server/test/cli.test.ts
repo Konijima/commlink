@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { DB_PATH_RULE } from '../src/dbpath.js';
 import { TOKEN_NAME_RULE, TokenStore, hashToken } from '../src/tokens.js';
 
 const execFileAsync = promisify(execFile);
@@ -44,13 +45,18 @@ describe('the token commands', () => {
     await rm(directory, { recursive: true, force: true });
   });
 
-  async function token(command: string, ...args: string[]): Promise<Outcome> {
+  /** Run a token command with an explicit environment, as an operator's shell would. */
+  async function run(
+    env: NodeJS.ProcessEnv,
+    command: string,
+    args: string[],
+  ): Promise<Outcome> {
     const script = join('src', 'cli', `token-${command}.ts`);
     try {
       const { stdout, stderr } = await execFileAsync(
         process.execPath,
         ['--import', 'tsx', script, ...args],
-        { cwd: SERVER_DIR, env: { ...process.env, DB_PATH: dbPath } },
+        { cwd: SERVER_DIR, env },
       );
       return { status: 0, stdout, stderr };
     } catch (error) {
@@ -62,6 +68,10 @@ describe('the token commands', () => {
         stderr: failed.stderr ?? '',
       };
     }
+  }
+
+  async function token(command: string, ...args: string[]): Promise<Outcome> {
+    return run({ ...process.env, DB_PATH: dbPath }, command, args);
   }
 
   /** Read the database back with no help from the commands that wrote it. */
@@ -242,5 +252,47 @@ describe('the token commands', () => {
 
     await token('revoke', 'pixel');
     expect((await token('list')).stderr).toContain('No tokens');
+  });
+
+  // A command must resolve DB_PATH exactly as the server does — refusing a blank or
+  // whitespace-only value — or it mints tokens into a database the server never reads.
+  // The raw `process.env.DB_PATH ?? default` this once used let both slip through: an
+  // empty string is not nullish, so the default never filled it in, and SQLite opened
+  // the empty filename as a private throwaway database while the server refused to boot.
+  describe('resolves DB_PATH the way the server does', () => {
+    it.each<[string, string]>([
+      ['a blank', ''],
+      ['a whitespace-only', '   '],
+    ])(
+      'refuses %s DB_PATH on token:create rather than minting into a throwaway database',
+      async (_case, value) => {
+        const created = await run({ ...process.env, DB_PATH: value }, 'create', [
+          'pixel',
+        ]);
+
+        expect(created.status).toBe(1);
+        expect(created.stderr).toContain('token:create');
+        expect(created.stderr).toContain(DB_PATH_RULE);
+        // Nothing minted: an operator must not walk away with a token from a database
+        // that was never opened.
+        expect(created.stdout).toBe('');
+      },
+    );
+
+    it('refuses a blank DB_PATH on token:list too', async () => {
+      const listed = await run({ ...process.env, DB_PATH: '' }, 'list', []);
+
+      expect(listed.status).toBe(1);
+      expect(listed.stderr).toContain('token:list');
+      expect(listed.stderr).toContain(DB_PATH_RULE);
+    });
+
+    it('refuses a blank DB_PATH on token:revoke too', async () => {
+      const revoked = await run({ ...process.env, DB_PATH: '' }, 'revoke', ['pixel']);
+
+      expect(revoked.status).toBe(1);
+      expect(revoked.stderr).toContain('token:revoke');
+      expect(revoked.stderr).toContain(DB_PATH_RULE);
+    });
   });
 });

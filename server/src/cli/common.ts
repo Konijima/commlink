@@ -4,11 +4,10 @@
  * The path matters more than it looks. `token:create` writing to one database while the
  * server reads another is a server that authorizes nobody and an operator holding a
  * token that works nowhere — so all three commands read the variable in one place, and
- * read it from the same `DB_PATH` the server does.
+ * read it through the same {@link parseDbPath} the server does.
  */
 
-/** Where the tokens live. The server resolves `DB_PATH` the same way. */
-export const DB_PATH = process.env.DB_PATH ?? './commlink.sqlite';
+import { parseDbPath } from '../dbpath.js';
 
 /** Refuses, and never returns. */
 export type Fail = (message: string) => never;
@@ -45,4 +44,28 @@ export function oneName(
   if (argv.length > 3) return fail('one name at a time');
 
   return name;
+}
+
+/**
+ * The database path the command acts on, resolved exactly as the server resolves it:
+ * {@link parseDbPath} trims a value and refuses a blank or whitespace-only one.
+ *
+ * Reading `process.env.DB_PATH` raw — the way this once did — let a command diverge from
+ * the server it is meant to share a database with. A blank `DB_PATH=`, or one that is
+ * only spaces, is not nullish, so it slipped a default that only fills in an *unset*
+ * variable and reached SQLite, which opens an empty filename as a private throwaway
+ * database. `token:create` then minted into a file deleted the moment it exits, leaving
+ * the operator a token that works nowhere — while the server, which resolves the same
+ * value through `parseDbPath`, refuses to boot on it. Resolving both through one function
+ * keeps a minted token in the database the server will actually read it from.
+ *
+ * A blank value is reported through `fail`, in the command's own voice and to stderr,
+ * rather than thrown as an uncaught error with a stack trace an operator has to decode.
+ */
+export function resolveDbPath(fail: Fail, env: NodeJS.ProcessEnv = process.env): string {
+  try {
+    return parseDbPath(env.DB_PATH);
+  } catch (error) {
+    return fail((error as Error).message);
+  }
 }

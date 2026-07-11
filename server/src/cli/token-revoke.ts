@@ -12,12 +12,13 @@
  * would otherwise look exactly like a token successfully revoked.
  */
 import { TokenStore } from '../tokens.js';
-import { DB_PATH, failWith, oneName } from './common.js';
+import { failWith, oneName, resolveDbPath } from './common.js';
 
 const fail = failWith('token:revoke');
 const name = oneName(fail, 'usage: token:revoke <name>');
+const dbPath = resolveDbPath(fail);
 
-const tokens = new TokenStore(DB_PATH);
+const tokens = new TokenStore(dbPath);
 let revoked: boolean;
 try {
   revoked = tokens.revoke(name);
@@ -27,9 +28,9 @@ try {
 
 // Outside the `finally`, because `fail` exits the process and an exiting process runs
 // no `finally` — the database would be left open on exactly the path that reports an error.
-if (!revoked) fail(`no token named "${name}" in ${DB_PATH}`);
+if (!revoked) fail(`no token named "${name}" in ${dbPath}`);
 
 console.error(
-  `Token "${name}" revoked from ${DB_PATH}. It no longer authorizes anything.`,
+  `Token "${name}" revoked from ${dbPath}. It no longer authorizes anything.`,
 );
 console.error('An open subscriber keeps its stream until it disconnects.');
