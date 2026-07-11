@@ -13,6 +13,27 @@ Notes: <cause, workaround, or fix once known>
 
 ---
 
+### 6 — a graceful shutdown left the databases open   [fixed]   severity: low
+Repro: not externally observable in normal use. Start the server against a file `DB_PATH`,
+publish a message, then stop it with `SIGTERM`. The process exits `0`, but the SQLite
+connections are never closed: with `journal_mode = WAL` the `-wal` (and `-shm`) sidecar
+files are left on disk, uncheckpointed, for the next start to recover.
+
+Notes: the entrypoint opens the message store and the token store itself and hands both to
+`buildApp`, which by design closes only a store it created — an injected one is the caller's
+to close (pinned by `test/ownership.test.ts`). The entrypoint was that caller and closed
+neither, so the graceful-shutdown path drained the subscribers and stopped the listener but
+stopped short of the database. No data is lost — a clean stop is not a power loss and the WAL
+is replayed on the next open — but a graceful stop should leave a checkpointed database, and
+`installShutdownHandlers` already documented that the databases are closed.
+
+Fixed by closing both stores from an `onClose` hook in the entrypoint, so `app.close()`
+reaches all the way down to SQLite. The fix lives in the entrypoint rather than `buildApp`,
+so the ownership contract is unchanged. Pinned by a subprocess test that publishes through the
+running server, asserts the `-wal` sidecar is on disk, sends `SIGTERM`, and asserts it is gone
+once the process exits — the observable proof both connections closed. Mutation-checked:
+leaving the connections open leaves the sidecar behind and fails the test.
+
 ### 5 — a failed delivery to a subscriber is swallowed without a trace   [fixed]   severity: low
 Repro: not externally observable. If writing a message to a connected subscriber throws
 (a WebSocket `send` or a `/json` stream `write` failing for a reason its own `error`/`close`
