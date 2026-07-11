@@ -87,6 +87,16 @@ before the Android client is built against it.
 The self-hostable pub/sub core.
 
 ### Docs & deployment accuracy
+- [ ] Split the `log_format` snippet in `deploy/nginx.conf` so it can be uncommented where it is
+      written (`BUGS.md#26`). `log_format` is an `http`-context directive sitting inside
+      `location /`, so an operator following the comment — the one remedy offered for keeping a
+      `?auth=` token out of the proxy log — gets `nginx: [emerg] … not allowed here` and no proxy
+      at all. The `map` block a few lines above already carries the note this one needs.
+- [ ] Settle whether `?auth=` authenticates a `HEAD` of the `/json` stream (`BUGS.md#27`). It
+      authenticates a `GET` of the same URL but not a `HEAD`, because the check keys on the
+      method under the reasoning that subscribing is exactly the `GET` routes — which stopped
+      being true when the stream gained a `HEAD`. Either accept the query token there (it grants
+      nothing the `GET` does not) or keep it header-only and say so where the docs promise both.
 - [ ] Replace the `%h` paths in the systemd unit for the system-unit path, and correct the
       guide that says they follow `User=` (`BUGS.md#25`). They follow the service *manager*,
       so a system unit run as a dedicated account looks for the checkout in `/root` and never

@@ -13,6 +13,59 @@ Notes: <cause, workaround, or fix once known>
 
 ---
 
+### 27 — `?auth=` authenticates a `GET` on the `/json` stream but not a `HEAD` of it   [open]   severity: low
+Repro: mint a token, then ask for the stream's headers with the token in the query — the
+credential the API table lists for that route, and the one a browser-side client has.
+
+```
+GET  /mytopic/json?auth=$TOKEN     -> 200   (the stream opens)
+HEAD /mytopic/json?auth=$TOKEN     -> 401 {"error":"a valid bearer token is required"}
+HEAD /mytopic/json                 -> 200   (with Authorization: Bearer $TOKEN)
+```
+
+Notes: `presentedToken` (`server/src/auth.ts`) accepts `?auth=` only when
+`request.method === 'GET'`, under a docstring that reasons "subscribing is exactly the set of
+`GET` routes that need a token, so that is the test". That was true when it was written. #22
+then gave `/:topic/json` a `HEAD` handler of its own, so a subscribe route acquired a second
+method and the reasoning went stale with it: the same URL that streams with `?auth=` refuses to
+describe itself with `?auth=`.
+
+Docs promise the wider behaviour. `server/README.md`'s API table lists the credentials for
+`/:topics/json` as "header, `?auth=`" with no mention of a method, and the paragraph #22 added
+offers the `HEAD` to "a probe or a proxy health check" — which, if it reuses a subscriber's
+`?auth=` URL, gets a `401` and reads it as a bad token rather than an unsupported credential.
+(A token-less probe gets a `401` too, for the ordinary reason: auth precedes the route and only
+`/healthz` is open — the #17/#20 line, which the new paragraph does not draw either.)
+
+Two coherent fixes, and picking between them is a call about the auth surface, not a typo:
+accept `?auth=` on a `HEAD` of a subscribe route (the query token already rides in that URL, so
+it grants nothing new), or keep the header-only rule and say so at the table and the paragraph.
+Either way the `auth.ts` docstring must stop resting on "exactly the set of `GET` routes".
+
+### 26 — the `log_format` nginx snippet cannot be uncommented where it is written   [open]   severity: medium
+Repro: follow the comment in `deploy/nginx.conf` that offers a way to keep a `?auth=` token out
+of the proxy's access log (#16's remedy) — uncomment the two lines exactly where they sit,
+inside `location /`, and reload.
+
+```
+nginx -t
+nginx: [emerg] "log_format" directive is not allowed here in /etc/nginx/conf.d/commlink.conf:64
+```
+
+nginx does not start, so the operator acting on a token-in-the-log warning takes the whole proxy
+down.
+
+Notes: `log_format` is an `http`-context directive; only the `access_log` line beside it is legal
+in a `location`. The snippet has to be split — `log_format` hoisted to `http { … }` (next to the
+`map` block), `access_log … no_query;` left in the `location`. The file already knows this hazard
+and documents it for the other http-context directive it ships: the `map` block carries an
+explicit note that it "belongs in the `http { ... }` context …, not inside `server`". The
+`log_format` lines were added later, in the same file, without the same note.
+
+Same theme as #14–#25: guidance that is correct only under a condition it does not state — here,
+that you also hoist the directive. It is sharper than the wording bugs, though, because the
+config it hands the operator does not load at all.
+
 ### 25 — the systemd unit's `%h` paths do not follow the `User=` the deploy guide tells you to add   [open]   severity: high
 Repro: follow `deploy/README.md`'s note on running as a system unit — copy
 `commlink-server.service` to `/etc/systemd/system/`, add `User=commlink`, and leave the
