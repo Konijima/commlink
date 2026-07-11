@@ -109,9 +109,13 @@ matter for this server, because a subscriber holds one long-lived connection rat
 making a short request each time:
 
 - **Forward the WebSocket upgrade.** The `/:topic/ws` subscribe route — the primary way
-  clients connect — answers only the WebSocket handshake; a plain request to it without
-  the `Upgrade` and `Connection` headers is a `404`. A proxy that does not pass those
-  headers through therefore breaks subscription entirely, with nothing to explain why.
+  clients connect — answers only the WebSocket handshake; an authenticated request to it
+  without the `Upgrade` and `Connection` headers opens no socket and is answered `404`. A
+  proxy that does not pass those headers through therefore breaks subscription entirely,
+  with nothing to explain why. If you probe the route with `curl` to test the proxy, send
+  a valid token: the auth check runs before the route, so a non-upgrade request with no
+  token is a `401`, which reads as a credential problem rather than the stripped upgrade
+  it actually is.
 - **Do not buffer the response.** The `/:topic/json` fallback streams messages as they
   are published and never ends on its own, so a proxy that buffers the body holds every
   line back until the stream closes — that is, until never. The route sends

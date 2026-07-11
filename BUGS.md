@@ -13,6 +13,35 @@ Notes: <cause, workaround, or fix once known>
 
 ---
 
+### 17 — the deploy guide said a non-upgrade `/ws` request "is a `404`" without qualification   [fixed]   severity: low
+Repro: read `deploy/README.md`'s TLS section, then probe the subscribe route over plain
+HTTP the way its "test the proxy" advice implies — with `curl`, without a token.
+
+```
+curl -i http://127.0.0.1:4500/mytopic/ws
+HTTP/1.1 401 Unauthorized
+{"error":"a valid bearer token is required"}
+```
+
+Notes: the section explained that a proxy which drops the `Upgrade`/`Connection` headers
+degrades a subscribe into a plain `GET` and breaks subscription, and stated flatly that
+such a request "is a `404`". That is only true once the request is authenticated. Auth runs
+in a `preValidation` hook (`server/src/auth.ts`, before any route handler), so a non-upgrade
+`GET /:topic/ws` with no valid token is refused with `401` and never reaches the route's
+`404` handler — the codebase already draws this line, in `test/notfound.test.ts` (an
+*authenticated* non-upgrade GET is `404`; an unauthenticated unknown route is `401`, not
+`404`). An operator debugging a broken subscription who probed the route with a token-less
+`curl` — the natural thing to try — would see the `401`, read it as a credential problem,
+and be steered away from the stripped-upgrade cause the paragraph is about. Same theme as
+#14–#16: an absolute doc claim about what a request returns that holds only under a
+condition the doc did not state.
+
+Fixed by scoping the claim — an *authenticated* non-upgrade request is the `404` a real
+broken subscriber sees — and adding the operator note that a token-less probe gets a `401`
+first, because auth precedes the route, so a proxy test must send a valid token. Docs only;
+no code or shipped-config behaviour changed, and the `401`/`404` split is already pinned by
+`test/notfound.test.ts`.
+
 ### 16 — the server README claimed a `?auth=` token never reaches any log   [fixed]   severity: low
 Repro: read the logging note in `server/README.md`, then deploy behind the shipped
 `deploy/nginx.conf`, subscribe with the token in the URL, and read nginx's access log.
