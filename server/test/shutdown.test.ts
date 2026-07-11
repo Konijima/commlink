@@ -1,5 +1,6 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -196,5 +197,51 @@ describe('the server process shuts down gracefully on SIGTERM', () => {
     expect(await closeCode).not.toBe(CLOSE_ABNORMAL);
     expect(await closeCode).toBe(CLOSE_NO_STATUS);
     expect(await exitCode).toBe(0);
+  }, 20_000);
+
+  it('closes its databases, checkpointing the WAL away', async () => {
+    // The entrypoint opens the message and token stores itself, so it — not `buildApp` —
+    // owns closing them. A clean stop must reach all the way down to SQLite: with the
+    // databases open, `journal_mode = WAL` leaves a `-wal` sidecar on disk; the last
+    // connection closing checkpoints it into the main file and removes it. So an absent
+    // `-wal` after the process exits is the observable proof that both connections were
+    // closed, where counting `close()` calls from outside the process cannot reach.
+    const dbPath = join(directory, 'commlink.sqlite');
+    const seed = new TokenStore(dbPath);
+    const token = seed.create('test');
+    seed.close();
+
+    child = spawn(process.execPath, ['--import', 'tsx', 'src/server.ts'], {
+      cwd: SERVER_DIR,
+      env: { ...process.env, DB_PATH: dbPath, PORT: '0', HOST: '127.0.0.1' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    const address = await waitForListening(child);
+
+    // Publish through the running server so its own connection writes to the WAL — the
+    // seed above wrote through a different connection that is already closed, taking its
+    // WAL with it. Without a write the server is holding, there would be no `-wal` to
+    // assert was cleaned up.
+    const published = await fetch(`${address}/mytopic`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+      body: 'hello',
+    });
+    expect(published.status).toBe(200);
+
+    const wal = `${dbPath}-wal`;
+    // The server is holding an uncheckpointed write, so the sidecar is on disk right now.
+    expect(existsSync(wal)).toBe(true);
+
+    const exitCode = new Promise<number | null>((resolve) => {
+      child?.once('exit', (code) => resolve(code));
+    });
+    child.kill('SIGTERM');
+
+    expect(await exitCode).toBe(0);
+    // Both connections were closed on the way out, so SQLite checkpointed the WAL into
+    // the main database and deleted the sidecar. Left open, it would still be here.
+    expect(existsSync(wal)).toBe(false);
   }, 20_000);
 });

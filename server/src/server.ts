@@ -67,11 +67,25 @@ try {
   process.exit(1);
 }
 
+// The entrypoint owns the two stores it opens: `buildApp` closes only a store it
+// created itself, so an injected one is the caller's to close. Left unclosed, a
+// SIGTERM would exit with both SQLite connections still open — no checkpoint, the WAL
+// and its sidecar files stranded on disk for the next boot to recover — which is not
+// the clean stop `installShutdownHandlers` documents. Closing them on `app.close()`
+// makes the graceful shutdown actually graceful all the way down to the database.
+const store = new MessageStore(DB_PATH);
+const tokens = new TokenStore(DB_PATH);
+
 const app = buildApp({
-  store: new MessageStore(DB_PATH),
-  tokens: new TokenStore(DB_PATH),
+  store,
+  tokens,
   retentionHours,
   logger,
+});
+
+app.addHook('onClose', async () => {
+  store.close();
+  tokens.close();
 });
 
 app
