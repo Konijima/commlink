@@ -118,6 +118,16 @@ making a short request each time:
   `X-Accel-Buffering: no` to opt out where that header is honoured; a proxy with its own
   response buffering needs it turned off for this path.
 
+One more thing to weigh, because a subscriber's credential rides in the URL: a browser
+cannot set a header on a WebSocket handshake, so a browser subscriber sends its bearer
+token as `?auth=<token>` in the query string. The server redacts it from its own request
+log, but a reverse proxy logs the request line as it arrived — nginx's default `combined`
+format writes the full URI, query string and all — so the token is persisted in the
+proxy's access log in clear. If your subscribers use `?auth=`, keep the proxy from logging
+it: turn the access log off for these routes, or use a log format that omits the query
+string (nginx's `$uri` in place of `$request`), so the token is not written where the
+server took care not to write it.
+
 The included `Caddyfile` satisfies both with no extra configuration: Caddy forwards
 WebSocket upgrades and streams responses unbuffered by default. nginx does neither on
 its own — the included [`nginx.conf`](./nginx.conf) sets both explicitly, and its
