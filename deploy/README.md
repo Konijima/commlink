@@ -148,7 +148,15 @@ format writes the full URI, query string and all — so the token is persisted i
 proxy's access log in clear. If your subscribers use `?auth=`, keep the proxy from logging
 it: turn the access log off for these routes, or use a log format that omits the query
 string (nginx's `$uri` in place of `$request`), so the token is not written where the
-server took care not to write it.
+server took care not to write it. The included `nginx.conf` ships that format ready to
+uncomment, in two halves — mind which goes where. `log_format` is an `http`-context
+directive, like the `map` block beside it: nginx refuses to load one written inside a
+`server` or `location` (`[emerg] "log_format" directive is not allowed here`) and will not
+start, so a config that defines the format down where it is used takes the whole proxy down
+rather than protecting the token. The definition belongs at the top level; only the
+`access_log` line that names the format goes in `location /`, and the two are correct only
+together — an `access_log` naming a format nothing defines is refused just as flatly
+(`[emerg] unknown log format "no_query"`).
 
 The included `Caddyfile` satisfies both with no extra configuration: Caddy forwards
 WebSocket upgrades and streams responses unbuffered by default. nginx does neither on

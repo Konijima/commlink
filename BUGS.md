@@ -42,7 +42,7 @@ accept `?auth=` on a `HEAD` of a subscribe route (the query token already rides 
 it grants nothing new), or keep the header-only rule and say so at the table and the paragraph.
 Either way the `auth.ts` docstring must stop resting on "exactly the set of `GET` routes".
 
-### 26 — the `log_format` nginx snippet cannot be uncommented where it is written   [open]   severity: medium
+### 26 — the `log_format` nginx snippet cannot be uncommented where it is written   [fixed]   severity: medium
 Repro: follow the comment in `deploy/nginx.conf` that offers a way to keep a `?auth=` token out
 of the proxy's access log (#16's remedy) — uncomment the two lines exactly where they sit,
 inside `location /`, and reload.
@@ -65,6 +65,26 @@ explicit note that it "belongs in the `http { ... }` context …, not inside `se
 Same theme as #14–#25: guidance that is correct only under a condition it does not state — here,
 that you also hoist the directive. It is sharper than the wording bugs, though, because the
 config it hands the operator does not load at all.
+
+Fixed by splitting the snippet across the two contexts it actually spans. The `log_format`
+definition now sits at the file's top level — which *is* the `http` context, since the file is
+included from there — beside the `map` block, and carries the same note the `map` does about why
+it cannot live any deeper. Only `access_log … no_query;` stays in `location /`, where it is legal
+and where it covers exactly the routes whose URL carries the token. Each half is written flush
+against its `#` (`#log_format …`), the convention #25 established for a commented-out directive:
+it is uncommented verbatim, so it is a one-character edit and it is checked like a live line.
+The deploy guide states the rule rather than leaving it to the config's comments — `log_format`
+is http-context, only the `access_log` that names it goes in the location, and the two are
+correct only together.
+
+Pinned by `server/test/deployunit.test.ts`'s new sibling, `server/test/deploynginx.test.ts`,
+which parses the shipped config, tracks the block each directive sits in, and refuses an
+http-only directive (`log_format`, `map`, `upstream`, `server`) inside a `server` or `location`
+— commented or live. A second case refuses an `access_log` that names a format the file does not
+define, since uncommenting that half alone is the same dead proxy by a different message
+(`[emerg] unknown log format "no_query"`). Mutation-checked both ways: putting the `log_format`
+back inside `location /` fails the first, and deleting the definition while leaving the
+`access_log` fails the second.
 
 ### 25 — the systemd unit's `%h` paths do not follow the `User=` the deploy guide tells you to add   [fixed]   severity: high
 Repro: follow `deploy/README.md`'s note on running as a system unit — copy
