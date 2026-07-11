@@ -5,8 +5,10 @@ import { Broker } from '../src/broker.js';
 import {
   MAX_SUBSCRIBE_TOPICS,
   MAX_TOPIC_LENGTH,
+  MAX_TOPIC_LIST_LENGTH,
   SINCE_RULE,
   TOPIC_LIST_RULE,
+  TOPIC_LIST_TOO_LONG_RULE,
   reservedTopicRule,
 } from '../src/message.js';
 import type { Message } from '../src/message.js';
@@ -421,6 +423,24 @@ describe('GET /:topic/json', () => {
       await publish(names[MAX_SUBSCRIBE_TOPICS - 1], 'hello');
 
       expect((await stream.next()).topic).toBe(names[MAX_SUBSCRIBE_TOPICS - 1]);
+    });
+
+    it('refuses a segment past the router limit with a 414 in the { error } shape', async () => {
+      // A list long enough to overrun `maxParamLength` (one character past the longest
+      // legal segment) is refused by the router with a `414` before any route runs, so
+      // the friendly per-rule `400` never speaks. The reason still has to arrive on
+      // `error`, not in the framework's default `{ error, code, message }` body. The
+      // router refuses this before route dispatch, so the same handler covers the `/ws`
+      // upgrade — a WS client hitting an over-long URL sees this `414`, not a hung
+      // handshake.
+      const segment = 'a'.repeat(MAX_TOPIC_LIST_LENGTH + 1);
+
+      const response = await subscribe(`${segment}/json`);
+
+      expect(response.status).toBe(414);
+      expect(((await response.json()) as { error: string }).error).toBe(
+        TOPIC_LIST_TOO_LONG_RULE,
+      );
     });
   });
 

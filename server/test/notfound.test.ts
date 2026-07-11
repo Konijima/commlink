@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { bearer, buildTestApp } from './helpers.js';
+import {
+  MALFORMED_URL_RULE,
+  MAX_TOPIC_LIST_LENGTH,
+  TOPIC_LIST_TOO_LONG_RULE,
+} from '../src/message.js';
 import type { TokenStore } from '../src/tokens.js';
 
 /**
@@ -73,6 +78,43 @@ describe('unknown routes', () => {
     expect(res.statusCode).toBe(404);
     expect(res.headers['content-type']).toMatch(/application\/json/);
     expect(res.json()).toEqual({ error: 'not found' });
+  });
+
+  it('normalizes an over-long path segment (414) into the { error } shape', async () => {
+    // A topic segment past `maxParamLength` is refused by the router with a `414` before
+    // any route — and so before the not-found handler — runs, which Fastify answers with
+    // its default `{ error, code, message }` body. The `frameworkErrors` hook rewrites it
+    // into the `{ error }` shape, naming both bounds an over-long segment could break.
+    let token: string;
+    ({ app, tokens, token } = buildTestApp());
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/${'a'.repeat(MAX_TOPIC_LIST_LENGTH + 1)}/json`,
+      headers: bearer(token),
+    });
+
+    expect(res.statusCode).toBe(414);
+    expect(res.headers['content-type']).toMatch(/application\/json/);
+    expect(res.json()).toEqual({ error: TOPIC_LIST_TOO_LONG_RULE });
+  });
+
+  it('normalizes a malformed request URL (400) into the { error } shape', async () => {
+    // A path with a broken percent-escape is not a valid URL, which the router refuses
+    // with a `400` before any route runs — the same framework-error surface as the `414`
+    // above. It, too, must name its reason on `error` rather than leak the default shape.
+    let token: string;
+    ({ app, tokens, token } = buildTestApp());
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/%zz/json',
+      headers: bearer(token),
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.headers['content-type']).toMatch(/application\/json/);
+    expect(res.json()).toEqual({ error: MALFORMED_URL_RULE });
   });
 
   it('still refuses an unauthenticated unknown route with 401, not 404', async () => {

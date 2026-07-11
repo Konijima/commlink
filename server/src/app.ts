@@ -8,8 +8,10 @@ import { registerAuth } from './auth.js';
 import { Broker } from './broker.js';
 import {
   BODY_ENCODING_RULE,
+  MALFORMED_URL_RULE,
   MAX_BODY_BYTES,
   MAX_TOPIC_LIST_LENGTH,
+  TOPIC_LIST_TOO_LONG_RULE,
   bodyRule,
   createMessage,
   decodeBody,
@@ -112,6 +114,28 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     // the route runs. Admit any list the subscribe routes would accept, and let them
     // be the ones to reject what is too long.
     routerOptions: { maxParamLength: MAX_TOPIC_LIST_LENGTH },
+    // The router refuses two kinds of request before any route — and so before the
+    // error and not-found handlers below — runs: a topic segment past `maxParamLength`
+    // (`414`) and a path that is not a valid URL (`400`). Fastify answers both with its
+    // default `{ error, code, message }` body, the one shape a client cannot read a
+    // plain reason off `error` from. Rewrite them into the `{ error }` shape every other
+    // refusal uses. A `414` here means the topic segment overran the largest legal list,
+    // so its reason names both bounds an over-long one could have broken. Written to the
+    // raw response, the way Fastify's own default framework-error path is.
+    frameworkErrors: (error, _request, reply) => {
+      const [statusCode, message] =
+        error.code === 'FST_ERR_MAX_PARAM_LENGTH'
+          ? ([414, TOPIC_LIST_TOO_LONG_RULE] as const)
+          : error.code === 'FST_ERR_BAD_URL'
+            ? ([400, MALFORMED_URL_RULE] as const)
+            : ([error.statusCode ?? 500, error.message] as const);
+      const body = JSON.stringify({ error: message });
+      reply.raw.writeHead(statusCode, {
+        'content-type': 'application/json; charset=utf-8',
+        'content-length': Buffer.byteLength(body),
+      });
+      reply.raw.end(body);
+    },
   });
 
   // Report a body the transport refused in the shape every other refusal uses: an
