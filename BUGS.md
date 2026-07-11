@@ -13,6 +13,38 @@ Notes: <cause, workaround, or fix once known>
 
 ---
 
+### 13 — token:create left the database open when it refused a name   [fixed]   severity: low
+Repro: point `token:create` at a fresh database and give it a name it will not take, then
+list what it left behind.
+
+```
+DB_PATH=/tmp/t.sqlite pnpm --silent token:create "has space"
+# token:create: name must be 1-64 characters of A-Z, a-z, 0-9, hyphen or underscore
+ls /tmp/t.sqlite*
+# /tmp/t.sqlite  /tmp/t.sqlite-wal  /tmp/t.sqlite-shm   <- sidecars left uncheckpointed
+```
+
+Notes: the command reported an error from its `catch` by calling `fail`, which exits the
+process — and an exiting process runs no `finally`, so the `tokens.close()` there was
+skipped on every error path (a bad name, or a name already in use). The SQLite connection
+was left open with `journal_mode = WAL`, so the `-wal` (and `-shm`) sidecars stayed on disk
+uncheckpointed for the next open to recover. No data is lost — a refused create commits
+nothing and the WAL is replayed on the next open — but a clean exit should leave a
+checkpointed database, exactly as the server's graceful shutdown does (#6).
+
+Same theme as #6: a store the code opened must be closed on every path out, and a `fail`
+that calls `process.exit` cannot be trusted to run a `finally`. The sibling `token:revoke`
+was deliberately structured around this — it does its database work in a `try/finally` and
+reports failure *after* the `finally` — but `token:create` had drifted back to the
+`catch { fail } / finally { close }` shape that hazard warns against.
+
+Fixed by matching `token:revoke`: capture the error message in the `catch`, close the store
+in the `finally`, then `fail` outside it. Pinned by a CLI test (`test/cli.test.ts`) that
+refuses a create and asserts no `-wal` sidecar is left behind — the observable proof the
+store was closed on the error path. Mutation-checked: it fails against the old code and
+passes now. Verified against the compiled CLI — a duplicate name and an invalid name both
+exit `1` naming the reason and leave only the main `.sqlite` file, no sidecars.
+
 ### 12 — a bad X-Priority was refused without naming the header   [fixed]   severity: low
 Repro: publish with an out-of-range `X-Priority` and read the refusal.
 
