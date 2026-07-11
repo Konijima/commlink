@@ -17,6 +17,19 @@ to match your host.
 
 ## systemd
 
+The unit runs the compiled server — its `ExecStart` is `node dist/server.js` — so build
+`dist/` before enabling the service, and again after each update. A fresh checkout does
+not ship it: without this step the unit crash-loops on `Cannot find module dist/server.js`
+with nothing to explain why.
+
+```bash
+cd server
+pnpm install     # dev dependencies included; the TypeScript compiler is one of them
+pnpm build       # emits dist/, which the unit runs
+```
+
+Then install and start the unit:
+
 ```bash
 # Adjust WorkingDirectory / ExecStart / User in the unit first.
 cp commlink-server.service ~/.config/systemd/user/    # user service
