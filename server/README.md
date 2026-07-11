@@ -431,11 +431,14 @@ see [`../deploy/`](../deploy/) — or set `HOST` to a specific address on a trus
 A blank `HOST` refuses to start rather than fall through to binding every interface, which
 is how an empty value would otherwise reach `listen`.
 
-`DB_PATH` may be a file path or the literal `:memory:` for a deliberately ephemeral server.
-A blank value refuses to start: SQLite opens an empty filename as a private temporary
-database that is deleted on close — and the messages and tokens hold separate connections,
-so a blank path would silently give each its own throwaway database, persisting nothing and
-authorizing nobody.
+`DB_PATH` must name a real file — the one SQLite database the server keeps its messages and
+tokens in. A blank value, or the literal `:memory:`, refuses to start: the server holds one
+connection for messages and another for tokens, and neither an empty filename (a private
+temporary database, deleted on close) nor `:memory:` (private to each connection) is shared
+between the two. Either would silently give each store its own throwaway database — and since
+`token:create` runs as its own process against a throwaway of its own too, the server's token
+store would start empty and unreachable, persisting nothing and authorizing nobody. Both are
+refused before any database is opened.
 
 ## API
 
