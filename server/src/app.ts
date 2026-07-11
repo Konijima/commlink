@@ -128,6 +128,15 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     return reply.send(error);
   });
 
+  // Answer an unknown path or an unsupported method in the same `{ error }` shape every
+  // deliberate refusal uses, rather than Fastify's default `{ message, error, statusCode }`
+  // — so a client that reads the reason off `error` finds it wherever it looks. This runs
+  // after the auth hook, so an unauthenticated request still hears `401` before it learns
+  // whether the route exists; only an authenticated wrong turn reaches here.
+  app.setNotFoundHandler((_request, reply) => {
+    return reply.code(404).send({ error: 'not found' });
+  });
+
   const broker = options.broker ?? new Broker();
 
   const store = options.store ?? new MessageStore();

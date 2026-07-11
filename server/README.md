@@ -438,3 +438,7 @@ live messages. "header" is `Authorization: Bearer <token>`; see
 [Authentication](#authentication). Publishing is capped at 60 requests a minute per
 token (see [Rate limit](#rate-limit)) and 4096 bytes per body (see
 [Body size](#body-size)); the other three routes are uncapped.
+
+Every refusal answers with the same JSON shape — `{"error":"<reason>"}` — including an
+unknown path or an unsupported method, which return `404 {"error":"not found"}`. A client
+can read the reason off `error` on any response it did not expect.
