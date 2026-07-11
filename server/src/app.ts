@@ -201,8 +201,12 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
 
       const text = typeof request.body === 'string' ? request.body : '';
 
-      // A notification with neither body nor title would show up blank.
-      if (text.length === 0 && title === null) {
+      // A notification with neither body nor title would show up blank. A body that is
+      // only whitespace renders just as blank as an empty one, so it counts as no body
+      // here — the same way `parseTitle` already treats a whitespace-only `X-Title` as
+      // no title. The stored body is left verbatim: only this emptiness test ignores
+      // whitespace, so a message with real content keeps whatever spacing it was sent.
+      if (text.trim().length === 0 && title === null) {
         return reply.code(400).send({ error: 'message body or X-Title is required' });
       }
 

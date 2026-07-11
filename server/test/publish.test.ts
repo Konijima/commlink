@@ -197,7 +197,10 @@ describe('POST /:topic', () => {
 
   it.each([
     ['an empty body and no title', '', {}],
+    ['a whitespace-only body and no title', '   ', {}],
+    ['a newline-only body and no title', '\n\t \r\n', {}],
     ['a whitespace-only title and empty body', '', { 'x-title': ' ' }],
+    ['a whitespace-only title and whitespace-only body', '  ', { 'x-title': ' ' }],
   ])('rejects %s with 400', async (_name, payload, headers) => {
     const res = await app.inject({
       method: 'POST',
@@ -207,6 +210,7 @@ describe('POST /:topic', () => {
     });
 
     expect(res.statusCode).toBe(400);
+    expect(store.since(['mytopic'], 0)).toEqual([]);
   });
 
   it('accepts an empty body when a title is present', async () => {
@@ -222,6 +226,34 @@ describe('POST /:topic', () => {
     const body = res.json() as Message;
     expect(body.title).toBe('Ping');
     expect(body.message).toBe('');
+  });
+
+  it('accepts a whitespace-only body when a title is present, stored verbatim', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/mytopic',
+      headers: { ...bearer(token), 'content-type': 'text/plain', 'x-title': 'Ping' },
+      payload: '   ',
+    });
+
+    expect(res.statusCode).toBe(200);
+
+    const body = res.json() as Message;
+    expect(body.title).toBe('Ping');
+    // Only the blank-notification guard ignores whitespace; the body itself is untouched.
+    expect(body.message).toBe('   ');
+  });
+
+  it('keeps a body verbatim when it has content padded with whitespace', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/mytopic',
+      headers: { ...bearer(token), 'content-type': 'text/plain' },
+      payload: '  hello  ',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect((res.json() as Message).message).toBe('  hello  ');
   });
 
   it.each(['0', '6', '-1', '3.5', 'high', '', ' '])(
