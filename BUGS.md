@@ -13,6 +13,32 @@ Notes: <cause, workaround, or fix once known>
 
 ---
 
+### 12 — a bad X-Priority was refused without naming the header   [fixed]   severity: low
+Repro: publish with an out-of-range `X-Priority` and read the refusal.
+
+```
+curl -i -H "Authorization: Bearer $TOKEN" -H "X-Priority: 9" -d hello \
+     http://127.0.0.1:4500/mytopic
+HTTP/1.1 400 Bad Request
+{"error":"priority must be an integer 1-5"}
+```
+
+Notes: every other publish-metadata refusal names the header the client set — `X-Title must
+be at most 256 bytes`, `X-Tags must be at most 16 tags…`, `X-Title must be valid UTF-8` — so a
+client reading the reason off `error` learns exactly which header to fix. `parsePriority` was
+the one that did not: it blamed "priority", leaving the client to infer that meant the
+`X-Priority` header it sent. Same theme as #3/#7/#9/#10 — a refusal must name a rule the client
+can act on, in the client's own terms. The wording was also unpinned: the publish tests asserted
+only the `400` status, never the message, so it was free to drift.
+
+Fixed by naming the header, through a `PRIORITY_RULE` constant (`X-Priority must be an integer
+1-5`) that mirrors the sibling `TITLE_RULE`/`TAGS_RULE`. Now pinned at both the parser and the
+route: `parsePriority` throws it for every out-of-range value (`test/headerlimits.test.ts`), a
+publish with a bad `X-Priority` answers `400 {"error":"X-Priority must be an integer 1-5"}`, and
+the raw-socket repeated-header test asserts the same. Mutation-proof: the old wording no longer
+contains the header the tests require. Verified against the running built server — a `9` and an
+empty value both return the named rule, a valid `5` still publishes.
+
 ### 11 — token:revoke told the operator a revoked subscriber keeps streaming until it reconnects   [fixed]   severity: low
 Repro: revoke a token while a subscriber is connected with it, and read what the CLI prints.
 

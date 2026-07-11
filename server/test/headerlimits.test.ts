@@ -2,12 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { Broker } from '../src/broker.js';
 import {
+  MAX_PRIORITY,
   MAX_TAGS,
   MAX_TAG_BYTES,
   MAX_TITLE_BYTES,
+  MIN_PRIORITY,
+  PRIORITY_RULE,
   TAGS_RULE,
   TITLE_RULE,
   type Message,
+  parsePriority,
   parseTags,
   parseTitle,
 } from '../src/message.js';
@@ -96,6 +100,24 @@ describe('parseTags', () => {
   });
 });
 
+describe('parsePriority', () => {
+  it('accepts each value in range', () => {
+    for (let value = MIN_PRIORITY; value <= MAX_PRIORITY; value++) {
+      expect(parsePriority(String(value))).toBe(value);
+    }
+  });
+
+  it.each(['0', '6', '-1', '3.5', 'high', '', ' '])(
+    'rejects %j naming the header',
+    (value) => {
+      // Like `TITLE_RULE` and `TAGS_RULE`, the refusal names the header the client set
+      // so a `400` read off `error` says which one to fix.
+      expect(() => parsePriority(value)).toThrow(PRIORITY_RULE);
+      expect(PRIORITY_RULE).toContain('X-Priority');
+    },
+  );
+});
+
 describe('publish header limits', () => {
   let app: FastifyInstance;
   let broker: Broker;
@@ -171,6 +193,14 @@ describe('publish header limits', () => {
     expect(store.since(['mytopic'], 0)).toEqual([]);
   });
 
+  it('refuses a bad priority with 400, naming the header', async () => {
+    const res = await publish({ 'x-priority': '9' });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: PRIORITY_RULE });
+    expect(PRIORITY_RULE).toContain('X-Priority');
+  });
+
   it('reports the broken priority when the title is over-long too', async () => {
     // Priority is parsed first, and one refusal names one rule.
     const res = await publish({
@@ -179,7 +209,7 @@ describe('publish header limits', () => {
     });
 
     expect(res.statusCode).toBe(400);
-    expect((res.json() as { error: string }).error).toContain('priority');
+    expect(res.json()).toEqual({ error: PRIORITY_RULE });
   });
 
   it('leaves an over-long title to the token check', async () => {

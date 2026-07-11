@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import {
   MAX_TITLE_BYTES,
+  PRIORITY_RULE,
   TITLE_RULE,
   headerValue,
   parseSince,
@@ -113,7 +114,7 @@ describe('a header a client sent twice', () => {
     const response = await publish(['X-Priority: 1', 'X-Priority: 5']);
 
     expect(response.status).toBe(400);
-    expect((JSON.parse(response.body) as { error: string }).error).toContain('priority');
+    expect((JSON.parse(response.body) as { error: string }).error).toBe(PRIORITY_RULE);
   });
 
   it('keeps the first Authorization header, so a second cannot authorize a request', async () => {
