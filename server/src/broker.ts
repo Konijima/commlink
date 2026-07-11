@@ -18,10 +18,16 @@ export interface BrokerOptions {
  */
 export class Broker {
   readonly #listeners = new Map<string, Set<MessageListener>>();
-  readonly #onListenerError: BrokerOptions['onListenerError'];
+
+  /**
+   * Called when a listener throws; see {@link BrokerOptions.onListenerError}. Assignable
+   * as well as constructor-set, so the app can attach its logger to the broker it runs
+   * whether it created that broker or was handed one.
+   */
+  onListenerError: BrokerOptions['onListenerError'];
 
   constructor(options: BrokerOptions = {}) {
-    this.#onListenerError = options.onListenerError;
+    this.onListenerError = options.onListenerError;
   }
 
   /**
@@ -62,7 +68,7 @@ export class Broker {
         listener(message);
         delivered += 1;
       } catch (error) {
-        this.#onListenerError?.(error, message);
+        this.onListenerError?.(error, message);
       }
     }
 

@@ -13,6 +13,24 @@ Notes: <cause, workaround, or fix once known>
 
 ---
 
+### 5 — a failed delivery to a subscriber is swallowed without a trace   [fixed]   severity: low
+Repro: not externally observable. If writing a message to a connected subscriber throws
+(a WebSocket `send` or a `/json` stream `write` failing for a reason its own `error`/`close`
+handler does not already catch), the broker drops the error on the floor and moves on.
+
+Notes: the broker swallows a throwing listener on purpose — one broken socket must not
+silence a topic for the others — and it was built with an `onListenerError` hook for exactly
+this, but the server never wired that hook to anything. So the one failure mode the broker
+defends against left no log line in a server that otherwise records everything (structured
+request logs, the no-tokens warning, `?auth=` redaction): a message could reach fewer
+subscribers than it should have with nothing to say why.
+
+Fixed by routing the hook to the server's structured error log, naming the topic and message
+id and carrying the thrown error, so an operator sees a delivery that failed rather than
+guessing at a silent gap. The publish still succeeds and the other subscribers are unaffected
+— only the visibility changed. Pinned by a test that publishes through the app to a subscriber
+whose delivery throws and asserts the error is logged while the publish returns `200`.
+
 ### 4 — the backpressure suite is intermittently red   [fixed]   severity: high
 Repro: run the suite enough times. It fails perhaps once in many runs, and more readily on
 a slow or busy machine. Seen on CI on a change that touched only `BUGS.md`:
