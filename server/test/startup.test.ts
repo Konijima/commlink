@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { DB_PATH_RULE } from '../src/dbpath.js';
+import { DB_PATH_RULE, IN_MEMORY_DB_PATH_RULE } from '../src/dbpath.js';
 import { HOST_RULE } from '../src/host.js';
 import { logLevelRule } from '../src/logging.js';
 import { PORT_RULE } from '../src/port.js';
@@ -132,6 +132,21 @@ describe('the server entrypoint refuses a bad config', () => {
     // discovering the data loss. No database file lands in the throwaway directory: the
     // refusal exits before either store is opened.
     expect(outcome.stderr).toContain(DB_PATH_RULE);
+    expect(outcome.stdout).toBe('');
+    expect(await readdir(directory)).toStrictEqual([]);
+  });
+
+  it('exits non-zero naming the rule for a DB_PATH of :memory:', async () => {
+    const outcome = await start({ DB_PATH: ':memory:' });
+
+    expect(outcome.status).not.toBe(0);
+    // `:memory:` is non-blank, so it clears the blank-path gate — but the server opens a
+    // connection for messages and another for tokens, and each in-memory connection is its own
+    // private database, so neither store would share one and `token:create` (a third process)
+    // reaches yet another: a `:memory:` server persists nothing and authorizes nobody. It is
+    // refused for its own named reason, before either store is opened, so the dir stays empty.
+    expect(outcome.stderr).toContain(IN_MEMORY_DB_PATH_RULE);
+    expect(outcome.stderr).not.toContain(DB_PATH_RULE);
     expect(outcome.stdout).toBe('');
     expect(await readdir(directory)).toStrictEqual([]);
   });

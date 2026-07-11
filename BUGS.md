@@ -13,6 +13,46 @@ Notes: <cause, workaround, or fix once known>
 
 ---
 
+### 21 — `DB_PATH=:memory:` was documented as an ephemeral server, but such a server authorizes nobody   [fixed]   severity: medium
+Repro: follow the docs — the README and `.env.example` both offered `:memory:` as a
+deliberately ephemeral server — then try to use one.
+
+```
+cd server
+DB_PATH=:memory: pnpm token:create pixel   # mints into this process's private :memory: DB
+DB_PATH=:memory: pnpm start                 # a different, empty :memory: DB
+curl -H "Authorization: Bearer $TOKEN" -d hi http://127.0.0.1:4500/mytopic
+# HTTP/1.1 401 Unauthorized   <- the server authorizes nobody, and cannot be given a token
+```
+
+Notes: the server opens one SQLite connection for messages and another for tokens
+(`server/src/server.ts`), and `token:create` runs as its own process. Each `:memory:`
+connection is its own private database (`server/src/db.ts`), so none of the three share
+one: the server's token store starts empty and no separate `token:create` can reach it. A
+`:memory:` server therefore persists nothing and answers every publish/subscribe with `401`
+— the exact "two separate throwaway databases … authorizes nobody" outcome that the blank
+`DB_PATH` refusal (`server/src/dbpath.ts`) exists to prevent (#19's neighbour). The docs
+recommended `:memory:` in one breath while, a line later, citing that same outcome as the
+reason to refuse a blank path — a claim true only for a *single* store, which is the sense
+in which the constructors legitimately default to it for tests.
+
+Same theme as #14–#20 — an absolute claim true only under an unstated condition — but a
+functional footgun like #19 rather than a wording gap: an operator who set `DB_PATH=:memory:`
+got a server that authorizes nobody, diagnosable only by the no-tokens warning and the `401`.
+
+Fixed by refusing `:memory:` as a whole-server `DB_PATH`, the same stance the blank path,
+`PORT`, `HOST`, `RETENTION_HOURS` and `LOG_LEVEL` already take: `parseDbPath` throws a
+distinct, named `IN_MEMORY_DB_PATH_RULE` for it, so the boot is refused before any database
+is opened with a reason that explains *why* (each in-memory connection is private, so nothing
+is shared or persisted). The per-store `IN_MEMORY` constructor default is untouched — a single
+store with `:memory:` is coherent, which is what the tests use. The README and `.env.example`
+now state that `DB_PATH` must be a real file and that both a blank value and `:memory:` are
+refused. Pinned by `test/dbpath.test.ts` (a `:memory:`, trimmed or not, throws the named rule)
+and `test/startup.test.ts` (the entrypoint exits non-zero naming the rule and opens no
+database); both are red against the old pass-through. Verified against the compiled `dist/`:
+`:memory:` is refused with the named reason, a blank path still gets its own rule, and a real
+file path passes through.
+
 ### 20 — the server README said an unknown path "returns a `404`" without qualification   [fixed]   severity: low
 Repro: read the API section of `server/README.md`, then probe an unknown path the way it
 implies — with `curl`, without a token.
