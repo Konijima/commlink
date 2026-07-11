@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { Broker } from '../src/broker.js';
-import { type Message, reservedTopicRule } from '../src/message.js';
+import { EMPTY_MESSAGE_RULE, type Message, reservedTopicRule } from '../src/message.js';
 import { MessageStore } from '../src/store.js';
 import type { TokenStore } from '../src/tokens.js';
 import { bearer, buildTestApp } from './helpers.js';
@@ -210,6 +210,9 @@ describe('POST /:topic', () => {
     });
 
     expect(res.statusCode).toBe(400);
+    // Name the rule the client can act on, so a `400` read off `error` distinguishes a
+    // blank notification from any other refusal — and the README may quote it verbatim.
+    expect(res.json()).toEqual({ error: EMPTY_MESSAGE_RULE });
     expect(store.since(['mytopic'], 0)).toEqual([]);
   });
 

@@ -142,7 +142,11 @@ curl -H "Authorization: Bearer $TOKEN" \
 ```
 
 Topic names are 1–64 characters of `A-Z`, `a-z`, `0-9`, `-` or `_`. A message needs a
-body or a title; an empty request with neither is rejected with `400`.
+non-blank body or a title, or it would show up as a blank notification. A request whose
+body is empty — or only whitespace, which renders just as blank — and that carries no
+title is rejected with `400 {"error":"message body or X-Title is required"}`. Only this
+check trims: a whitespace-only body is still delivered verbatim when a title is present,
+and a body with real content keeps whatever spacing it was sent.
 
 ### Metadata size
 

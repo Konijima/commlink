@@ -13,6 +13,38 @@ Notes: <cause, workaround, or fix once known>
 
 ---
 
+### 18 — the publish docs said "anything you POST becomes a message", but a whitespace-only body is refused   [fixed]   severity: low
+Repro: read `server/README.md`'s Publishing section — "Anything you `POST` to `/:topic`
+becomes a message… taken verbatim as UTF-8" — then publish a body that is only whitespace,
+with no title.
+
+```
+curl -i -H "Authorization: Bearer $TOKEN" --data-binary '   ' http://127.0.0.1:4500/mytopic
+HTTP/1.1 400 Bad Request
+{"error":"message body or X-Title is required"}
+```
+
+Notes: the publish route treats a body that trims to nothing as no body — it would render
+as a blank notification, so with no title it is refused (`server/src/app.ts`, pinned by
+`test/publish.test.ts`). That is the right behaviour, but the README's opener ("anything you
+POST becomes a message") and the rule below it ("an empty request with neither is rejected")
+were both absolute about *empty*, and a body of spaces or newlines is not literally empty —
+a client sending a deliberately blank-looking body, or one that is just a newline, would be
+surprised by the `400` after being told anything it posts is delivered. Same theme as #14–#17:
+an absolute doc claim that holds only under a condition the doc did not state — here, that the
+body must not trim to nothing when there is no title.
+
+The refusal message (`message body or X-Title is required`) was also unpinned: the publish
+tests asserted only the `400` status on these cases, never the reason, so a doc that quoted it
+could drift from the code — the hazard #12 named.
+
+Fixed by stating the rule precisely in the README (a *non-blank* body or a title; a
+whitespace-only body counts as blank for this check, but is still delivered verbatim when a
+title is present) and quoting the exact reason. The reason is now the named `EMPTY_MESSAGE_RULE`
+constant (`server/src/message.ts`), matching the sibling `TITLE_RULE`/`PRIORITY_RULE`/`bodyRule`,
+and `test/publish.test.ts` asserts it on every blank-message rejection so the doc quote cannot
+drift. No shipped behaviour changed; the whitespace-only handling was already correct and tested.
+
 ### 17 — the deploy guide said a non-upgrade `/ws` request "is a `404`" without qualification   [fixed]   severity: low
 Repro: read `deploy/README.md`'s TLS section, then probe the subscribe route over plain
 HTTP the way its "test the proxy" advice implies — with `curl`, without a token.

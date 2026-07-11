@@ -8,6 +8,7 @@ import { registerAuth } from './auth.js';
 import { Broker } from './broker.js';
 import {
   BODY_ENCODING_RULE,
+  EMPTY_MESSAGE_RULE,
   MALFORMED_URL_RULE,
   MAX_BODY_BYTES,
   MAX_TOPIC_LIST_LENGTH,
@@ -277,7 +278,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       // no title. The stored body is left verbatim: only this emptiness test ignores
       // whitespace, so a message with real content keeps whatever spacing it was sent.
       if (text.trim().length === 0 && title === null) {
-        return reply.code(400).send({ error: 'message body or X-Title is required' });
+        return reply.code(400).send({ error: EMPTY_MESSAGE_RULE });
       }
 
       const message = createMessage({
