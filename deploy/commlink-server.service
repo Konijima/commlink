@@ -5,22 +5,30 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# Adjust these to your checkout and environment.
-WorkingDirectory=%h/commlink/server
+# Adjust these to your checkout and environment. Both paths are absolute on purpose.
+# Do not write them with %h: that specifier is the home of the *service manager*, not of
+# the account in User=, and systemd says so explicitly. Under `systemctl --user` it is
+# your home, which reads as if it followed the account — but a system unit with
+# User=commlink still expands %h to the system manager's home, /root, where the checkout
+# is not and which an unprivileged User= cannot enter anyway. The unit then dies on CHDIR
+# before it runs a line of the server.
+WorkingDirectory=/opt/commlink/server
 ExecStart=/usr/bin/node dist/server.js
 Environment=NODE_ENV=production
 Environment=PORT=4500
 Environment=HOST=127.0.0.1
 # The message database. Keep it outside the checkout: DB_PATH is resolved relative to
 # WorkingDirectory, so leaving it unset writes commlink.sqlite into the source tree.
-# StateDirectory creates the directory and owns its permissions; %S is /var/lib for a
-# system unit and $XDG_STATE_HOME (usually ~/.local/state) for a user unit.
+# StateDirectory creates the directory and owns its permissions (as User=, where one is
+# set). %S is manager-scoped like %h — /var/lib under the system manager, $XDG_STATE_HOME
+# (usually ~/.local/state) under a user one — but that is the right root for each, so it
+# needs no adjusting where %h does.
 StateDirectory=commlink
 Environment=DB_PATH=%S/commlink/commlink.sqlite
 # How long a message stays replayable. Defaults to 72; a whole number of hours.
 Environment=RETENTION_HOURS=72
-# Or load a full environment file instead of the lines above:
-# EnvironmentFile=%h/.config/commlink/server.env
+# Or load a full environment file instead of the lines above. Absolute, for the same reason:
+#EnvironmentFile=/etc/commlink/server.env
 Restart=on-failure
 RestartSec=5
 
@@ -42,8 +50,9 @@ SystemCallArchitectures=native
 # unprivileged user namespaces are enabled — so they are left commented rather than
 # breaking the user-service path documented in the README. Uncomment for a system
 # unit (or a user host that supports them) and confirm with `systemd-analyze security
-# commlink-server.service`. ProtectHome is system-unit-only: a user unit's checkout,
-# and its %S state directory, live under the home it would hide.
+# commlink-server.service`. ProtectHome is system-unit-only: a user unit's %S state
+# directory is under ~/.local/state — the home it would hide — as a user unit's checkout
+# usually is too.
 #ProtectSystem=strict
 #ProtectHome=read-only
 #PrivateTmp=true

@@ -31,8 +31,10 @@ pnpm build       # emits dist/, which the unit runs
 Then install and start the unit:
 
 ```bash
-# Adjust WorkingDirectory and ExecStart in the unit first. A user service runs as you,
-# so there is no User= line to set — systemd does not honor one in a user unit.
+# Adjust WorkingDirectory and ExecStart in the unit first — the shipped WorkingDirectory
+# is a placeholder (/opt/commlink/server), so point it at your checkout. A user service
+# runs as you, so there is no User= line to set — systemd does not honor one in a user
+# unit.
 cp commlink-server.service ~/.config/systemd/user/    # user service
 systemctl --user daemon-reload
 systemctl --user enable --now commlink-server.service
@@ -51,10 +53,26 @@ sudo loginctl enable-linger "$USER"
 The unit's `WantedBy=default.target` then brings the server up at boot. A system unit in
 `/etc/systemd/system/` runs at boot without lingering, but starts as root: add a
 `User=`/`Group=` for a dedicated unprivileged account so the server does not run with more
-than it needs, and adjust the `%h`/`%S` paths, which then resolve against that account
-rather than your home.
+than it needs.
 
-The unit points `DB_PATH` at a state directory outside the checkout. `DB_PATH` is
+**Write every path in the unit absolute — do not reach for `%h`.** systemd's specifiers
+that name a home or a state root follow the *service manager*, not `User=`; the manual says
+of `%h` in so many words that it "is not influenced by the `User=` setting". Under
+`systemctl --user` the manager is you, so `%h` is your home and looks like it follows the
+account — but under the system manager it is `/root`, whatever `User=` says. A system unit
+with `User=commlink` and `WorkingDirectory=%h/commlink/server` therefore looks for the
+checkout in `/root/commlink/server`, which is not where it is and which an unprivileged
+account cannot enter regardless, and the service dies on a `CHDIR` error before it runs any
+of the server. The shipped unit uses an absolute placeholder (`/opt/commlink/server`) for
+that reason; put the checkout wherever the account can read it and say so in full.
+
+`%S` is manager-scoped in the same way — `/var/lib` for a system unit, `$XDG_STATE_HOME`
+(usually `~/.local/state`) for a user one — but unlike `%h` that is the correct state root
+in each case, so `StateDirectory=` and the `%S`-based `DB_PATH` need no adjusting. Under a
+system unit with `User=` set, `StateDirectory=commlink` creates `/var/lib/commlink` owned by
+that account.
+
+The unit points `DB_PATH` at that state directory, outside the checkout. `DB_PATH` is
 resolved relative to `WorkingDirectory`, so a unit that leaves it unset writes the
 message database into the source tree — where a redeploy can wipe it.
 
