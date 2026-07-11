@@ -66,7 +66,7 @@ Same theme as #14–#25: guidance that is correct only under a condition it does
 that you also hoist the directive. It is sharper than the wording bugs, though, because the
 config it hands the operator does not load at all.
 
-### 25 — the systemd unit's `%h` paths do not follow the `User=` the deploy guide tells you to add   [open]   severity: high
+### 25 — the systemd unit's `%h` paths do not follow the `User=` the deploy guide tells you to add   [fixed]   severity: high
 Repro: follow `deploy/README.md`'s note on running as a system unit — copy
 `commlink-server.service` to `/etc/systemd/system/`, add `User=commlink`, and leave the
 `%h` paths as shipped, since the guide says they "resolve against that account rather than
@@ -82,6 +82,27 @@ absolute ones for a system unit, not merely "adjusted". (`%S` does resolve usefu
 
 Same theme as #14–#21: an absolute claim that is true only under a condition the doc did not
 state — here, that the manager is the *user* manager, which is the guide's primary path.
+
+Fixed by writing the unit's paths absolute and correcting the guide's reasoning. The shipped
+`WorkingDirectory` is now an absolute placeholder (`/opt/commlink/server`) rather than a
+`%h`-relative one, and the commented `EnvironmentFile` example — which an operator uncomments
+verbatim — is absolute too, since it carried the same trap. `%S` stays: it is manager-scoped
+in exactly the way `%h` is, but `/var/lib` and `$XDG_STATE_HOME` are the *correct* state root
+for their respective managers, so unlike a home it needs no adjusting, and `StateDirectory=`
+creates it owned by `User=` where one is set. `deploy/README.md` no longer says the specifiers
+"resolve against that account"; it states the rule (write every path absolute, because `%h`
+follows the service manager and systemd's manual says it "is not influenced by the `User=`
+setting"), names the `/root` expansion and the `CHDIR` death that follow from ignoring it, and
+draws the `%h`/`%S` distinction rather than lumping them together.
+
+Pinned by `server/test/deployunit.test.ts`, which parses the shipped unit and refuses a `%h`
+in any directive — live *or* commented-out, since a commented directive is guidance acted on
+verbatim — and requires `WorkingDirectory` to be absolute. The unit's two comment styles carry
+that distinction: a commented-out *directive* is written flush against the `#`
+(`#EnvironmentFile=…`, as the sandboxing block already did), prose gets a space, so a sentence
+that happens to open with `User=…` is not mistaken for a directive. Mutation-checked: restoring
+`WorkingDirectory=%h/commlink/server` fails two of the three, and putting `%h` back in the
+commented `EnvironmentFile` alone fails the first.
 
 ### 24 — a token minted with the command the server's own warning names lands in the wrong database, under the deploy guide's unit   [open]   severity: medium
 Repro: deploy with the shipped unit, which sets `DB_PATH` through `Environment=`. Every

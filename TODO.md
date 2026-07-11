@@ -97,10 +97,15 @@ The self-hostable pub/sub core.
       method under the reasoning that subscribing is exactly the `GET` routes — which stopped
       being true when the stream gained a `HEAD`. Either accept the query token there (it grants
       nothing the `GET` does not) or keep it header-only and say so where the docs promise both.
-- [ ] Replace the `%h` paths in the systemd unit for the system-unit path, and correct the
-      guide that says they follow `User=` (`BUGS.md#25`). They follow the service *manager*,
-      so a system unit run as a dedicated account looks for the checkout in `/root` and never
-      starts.
+- [x] Replace the `%h` paths in the systemd unit for the system-unit path, and correct the
+      guide that says they follow `User=` (`BUGS.md#25`). They follow the service *manager*, so
+      a system unit run as a dedicated account looked for the checkout in `/root` and never
+      started. The unit now ships absolute paths — in the commented `EnvironmentFile` example
+      too, which an operator uncomments verbatim — and the guide states the rule rather than the
+      claim that broke it. `%S` stays: it is manager-scoped the same way, but `/var/lib` and
+      `$XDG_STATE_HOME` are the right state root for each manager, so it needs no adjusting.
+      `test/deployunit.test.ts` refuses a `%h` in any directive of the shipped unit, so the trap
+      cannot creep back in.
 - [ ] Point an operator at the database the server actually reads (`BUGS.md#24`). The startup
       warning names `pnpm token:create <name>`, which under the shipped unit mints into the
       checkout rather than the unit's `DB_PATH` — the same "authorizes nobody" outcome as the
