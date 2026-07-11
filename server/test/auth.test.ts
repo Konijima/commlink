@@ -337,10 +337,14 @@ describe('a revoked token', () => {
     expect((await publish(kept)).statusCode).toBe(200);
   });
 
-  it('keeps a stream that was already open, until the subscriber disconnects', async () => {
-    // A token is checked when a connection is made, not for as long as it is held. This
-    // is the documented consequence, pinned here so it stays a decision rather than an
-    // accident: an operator who must cut a live subscriber off restarts the server.
+  it('still reaches an already-open stream until the next revocation sweep', async () => {
+    // A token is checked when a connection is made, not on every message, so the delete
+    // alone does not cut off a subscriber already holding an open stream — the revocation
+    // sweep does, within a keepalive interval (revocation.test.ts pins that; the sweep is
+    // not instantaneous, and the production interval is 45s). This build uses the default
+    // interval, so no sweep fires in the few milliseconds here: a message published the
+    // instant after a revoke still reaches the open socket. The sweep, not a restart,
+    // closes it — pinned here so that guarantee stays a decision rather than an accident.
     const socket = connect('/mytopic/ws', bearer(revoked));
     await new Promise<void>((resolve, reject) => {
       socket.once('open', () => resolve());
