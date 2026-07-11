@@ -13,6 +13,30 @@ Notes: <cause, workaround, or fix once known>
 
 ---
 
+### 14 — the nginx example promised client IPs in the server's request log   [fixed]   severity: low
+Repro: deploy behind the example `deploy/nginx.conf`, publish or subscribe through it, and
+read the server's request log.
+
+```
+{"level":30,...,"req":{"method":"POST","url":"/mytopic","host":"push.example.com","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+```
+
+Notes: the proxy block's comment said its `proxy_set_header` lines passed "the client's
+details through to the server's request log". That holds for the forwarded `Host` — which
+the server logs as `host` — but not for the address. The server enables no `trustProxy`, so
+`request.ip` (logged as `remoteAddress`) is the connecting peer, which behind the proxy is
+`127.0.0.1`: the `X-Forwarded-For`/`X-Real-IP` the block sets never reach the log. An
+operator following the example would look for client addresses in the server log, find only
+the proxy, and have nothing to explain the gap. The real client address is recorded in
+nginx's own access log.
+
+Fixed by rewording the comment to state what happens: the `Host` is preserved and reaches
+the server's log, the client's address is forwarded in the standard headers but the request
+log shows the proxy, and the client's own address lives in nginx's access log. Pinned by a
+logging test that sends the forwarded headers from a distinct peer and asserts the log
+carries the `Host` but not the forwarded address. Mutation-checked: enabling `trustProxy`
+makes the log record the forwarded address and the test fails.
+
 ### 13 — token:create left the database open when it refused a name   [fixed]   severity: low
 Repro: point `token:create` at a fresh database and give it a name it will not take, then
 list what it left behind.
