@@ -13,6 +13,33 @@ Notes: <cause, workaround, or fix once known>
 
 ---
 
+### 10 — a publish with an over-long topic was refused with the subscribe rule   [fixed]   severity: low
+Repro: publish to a single topic name longer than the router's path-segment limit — about
+3.2 KB, far past the 64-character topic rule:
+
+```
+curl -i -H "Authorization: Bearer $TOKEN" -d hello \
+     http://127.0.0.1:4500/$(head -c 4000 < /dev/zero | tr '\0' a)
+HTTP/1.1 414 URI Too Long
+{"error":"subscribe to at most 50 topics of at most 64 characters each"}
+```
+
+Notes: the router caps the topic path segment at the length of the longest legal *subscribe*
+list — 50 names of 64 characters — so the same cap governs the publish `:topic` segment. A
+`POST` that overran it was answered by the `frameworkErrors` hook with the subscribe-worded
+reason, telling a publisher — which never subscribes and cannot act on "at most 50 topics" —
+to fix a rule it was not using. A publish carries exactly one topic, so its only way to
+overrun the segment is a single name that is too long. Same theme as #7 and #9: every refusal
+must name a reason the client can act on off `error`.
+
+Fixed by branching the hook's `414` on the request method. A `POST` past the segment limit is
+one over-long topic and now hears the one-topic rule (`topic must be 1-64 characters of A-Z,
+a-z, 0-9, hyphen or underscore`); a subscribe `GET` still names both list bounds, since it
+could be either too many topics or one name too long. The malformed-URL `400` branch is
+unchanged. Pinned by a `notfound.test.ts` case that publishes an over-long topic and asserts
+the one-topic wording; mutation-checked, so reverting the method branch fails it on the old
+subscribe wording.
+
 ### 9 — a non-upgrade GET to a subscribe socket returned an empty 404   [fixed]   severity: low
 Repro: request the WebSocket route over plain HTTP, without upgrading — a browser opening
 the URL, an uptime check, or a reverse proxy that dropped the `Upgrade` header:
