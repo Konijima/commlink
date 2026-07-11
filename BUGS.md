@@ -13,6 +13,30 @@ Notes: <cause, workaround, or fix once known>
 
 ---
 
+### 15 — the deploy guide told Traefik users to turn response buffering on   [fixed]   severity: low
+Repro: read `deploy/README.md`'s TLS section, which lists "Do not buffer the response" as a
+requirement for the `/:topic/json` stream, then reaches its closing note on other proxies.
+
+```
+Traefik works too, but only once its WebSocket-upgrade and response-buffering settings
+are turned on for these routes; the defaults are not enough.
+```
+
+Notes: the same section states two requirements a reverse proxy must meet — forward the
+WebSocket upgrade, and *do not* buffer the response, because `/:topic/json` streams messages
+as they are published and never ends, so a buffering proxy holds every line back forever. The
+closing note on Traefik then told an operator to turn a "response-buffering setting" on, the
+opposite of that requirement: an operator who followed it would buffer the one route that must
+not be, and break streaming exactly as an unconfigured nginx does. The note also over-claimed
+that Traefik's defaults are insufficient without saying for which of the two, and named a
+setting to enable that contradicts the requirement stated a few lines above.
+
+Fixed by rewording the note to the two requirements the section already sets out — forward the
+upgrade, do not buffer the response — and pointing at Traefik's own documentation for the
+settings that govern each, rather than naming a "buffering" setting to turn on that would break
+the stream. The shipped `Caddyfile` and `nginx.conf` are unaffected; only the prose about a
+third proxy changed.
+
 ### 14 — the nginx example promised client IPs in the server's request log   [fixed]   severity: low
 Repro: deploy behind the example `deploy/nginx.conf`, publish or subscribe through it, and
 read the server's request log.

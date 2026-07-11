@@ -121,6 +121,7 @@ making a short request each time:
 The included `Caddyfile` satisfies both with no extra configuration: Caddy forwards
 WebSocket upgrades and streams responses unbuffered by default. nginx does neither on
 its own — the included [`nginx.conf`](./nginx.conf) sets both explicitly, and its
-comments mark which line does which. Traefik works too, but only once its
-WebSocket-upgrade and response-buffering settings are turned on for these routes; the
-defaults are not enough.
+comments mark which line does which. Traefik works too, on the same two requirements: it
+must forward the WebSocket upgrade and must **not** buffer the response — buffering would
+hold the `/:topic/json` stream back the way an unconfigured nginx does. Consult its
+documentation for the settings that govern each.
