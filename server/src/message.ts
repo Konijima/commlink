@@ -59,6 +59,14 @@ export function bodyRule(maxBytes: number = MAX_BODY_BYTES): string {
 export const BODY_ENCODING_RULE = 'message body must be valid UTF-8';
 
 /**
+ * What the server tells a client whose request URL is not a valid URL — a path with a
+ * malformed percent-escape, say. The router refuses it before any route runs, so this is
+ * the reason a client reads off `error` rather than the framework's default
+ * `{ error, code, message }` body.
+ */
+export const MALFORMED_URL_RULE = 'request URL is not a valid URL';
+
+/**
  * The largest `X-Title` accepted, in bytes.
  *
  * A title is the one line a notification shows before it is opened; a limit this size
@@ -157,6 +165,17 @@ export const TOPIC_LIST_RULE = `subscribe to at most ${MAX_SUBSCRIBE_TOPICS} com
  * which would otherwise truncate a legal list into a `414` before any route sees it.
  */
 export const MAX_TOPIC_LIST_LENGTH = MAX_SUBSCRIBE_TOPICS * (MAX_TOPIC_LENGTH + 1) - 1;
+
+/**
+ * What the server tells a client whose topic segment overruns {@link MAX_TOPIC_LIST_LENGTH}
+ * — a URL too long for even the largest legal list to fit in. The router caps the path
+ * parameter at that length and refuses a longer one with a `414` before any route runs, so
+ * the friendlier per-rule refusals never get to speak. The overrun is one of two things —
+ * more than {@link MAX_SUBSCRIBE_TOPICS} topics, or a single name past {@link MAX_TOPIC_LENGTH}
+ * — and this names both bounds so a client learns the reason off `error` like every other
+ * refusal, rather than reading the framework's default `{ error, code, message }` shape.
+ */
+export const TOPIC_LIST_TOO_LONG_RULE = `subscribe to at most ${MAX_SUBSCRIBE_TOPICS} topics of at most ${MAX_TOPIC_LENGTH} characters each`;
 
 /**
  * Why the server will not accept `topic`, or `null` if it will. A name outside the topic

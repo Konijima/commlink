@@ -51,7 +51,7 @@ blanket "every 400 is charged" wording, which is not literally true for a body r
 pre-auth. The likely fix is to reconcile the docs rather than move the limiter ahead of
 body parsing.
 
-### 7 — an over-long subscribe topic list leaks the framework's default error shape   [open]   severity: low
+### 7 — an over-long subscribe topic list leaks the framework's default error shape   [fixed]   severity: low
 Repro: subscribe to a comma-separated list long enough to overrun the router's path-segment
 limit — 51 topics at the full 64-character length, about 3.3 KB of URL. The response is a
 `414` carrying the framework's default `{error,code,message}` body instead of the plain
@@ -61,8 +61,18 @@ list of 51 *short* topics still gets that friendly `400`.
 Notes: the topic segment's length is capped by the router before any route runs, so an
 over-long one is answered by the framework's built-in `414`, which the server's error and
 not-found handlers do not cover. Very narrow — it needs a multi-kilobyte URL — but it is
-one more place a client cannot read the reason off `error`. A fix would normalize the `414`
-into the same `{ error }` shape.
+one more place a client cannot read the reason off `error`.
+
+Fixed with a `frameworkErrors` hook, which catches the two refusals the router makes before
+any route — and so before the error and not-found handlers — runs: a path segment past the
+limit (`414`) and a path that is not a valid URL (`400`, e.g. a broken percent-escape). Both
+now answer in the `{ error }` shape every other refusal uses. The `414`'s reason names both
+bounds an over-long segment could have broken — `subscribe to at most 50 topics of at most
+64 characters each` — since it stands in for either "too many topics" or "one name too
+long". A legal 51-*short*-topic list still reaches the route and gets the friendlier `400`.
+Verified against the running built server: an over-long list on `/json` and on a non-upgrade
+`/ws` both return the `414 { error }` shape, a malformed URL returns the `400 { error }`
+shape, and the short-list `400` is unchanged.
 
 ### 6 — a graceful shutdown left the databases open   [fixed]   severity: low
 Repro: not externally observable in normal use. Start the server against a file `DB_PATH`,
