@@ -13,6 +13,47 @@ Notes: <cause, workaround, or fix once known>
 
 ---
 
+### 19 — the token commands ignored a `DB_PATH` set in `.env`, so tokens were minted into a different database than the server read   [fixed]   severity: medium
+Repro: follow the documented setup — copy `.env.example` to `.env`, set `DB_PATH` there
+(and nowhere else), then mint a token and start the server:
+
+```
+cd server
+cp .env.example .env
+# edit .env: DB_PATH=/var/lib/commlink/db.sqlite
+pnpm token:create pixel      # writes ./commlink.sqlite, not the .env path
+pnpm start                   # opens /var/lib/commlink/db.sqlite — which holds no tokens
+curl -H "Authorization: Bearer $TOKEN" -d hi http://127.0.0.1:4500/mytopic
+# HTTP/1.1 401 Unauthorized   <- the server authorizes nobody
+```
+
+Notes: the server loads a `.env` from its working directory before it reads `DB_PATH`
+(`server/src/server.ts`, `loadEnvFile`), so a `DB_PATH` set only in `.env` — the way
+`.env.example` and the README document it — is where the server opens its database. The
+token commands resolved `DB_PATH` from the process environment alone
+(`server/src/cli/common.ts`, `resolveDbPath`), never loading `.env`, so they missed that
+value and fell back to the default `./commlink.sqlite`. An operator who did exactly what the
+docs say minted the token into one database and ran the server against another: a server that
+authorizes nobody, holding a token that works nowhere.
+
+Same theme as #14–#18 — an absolute claim true only under an unstated condition — but a
+functional footgun rather than a wording gap: `resolveDbPath`'s own docstring claimed it
+resolved `DB_PATH` "exactly as the server resolves it," which held only when `DB_PATH` was
+*also* exported as a real environment variable (where a real variable wins for both, so the
+`.env` step never mattered). The blast radius is limited by the server logging a no-tokens
+warning and answering `401`, so the break is diagnosable — but it silently defeats the
+documented setup path.
+
+Fixed by routing the token commands through the server's `.env` load first, then the same
+`parseDbPath`: `resolveDbPath` calls `loadEnvFile({ env })` before parsing. A real environment
+variable still wins, exactly as it does for the server (so the deploy guide's
+`DB_PATH=… node dist/cli/token-create.js` is unaffected), and a `.env` the loader cannot parse
+is refused in the command's own voice rather than resolved past to a default. Pinned by
+`test/cli.test.ts`: a `.env`-only `DB_PATH` is where the token lands (and the default
+`./commlink.sqlite` is never created), a real env var still wins over the `.env` value, and a
+malformed `.env` refuses the command naming it. Both `.env`-picks-up cases are red against the
+old code and green now.
+
 ### 18 — the publish docs said "anything you POST becomes a message", but a whitespace-only body is refused   [fixed]   severity: low
 Repro: read `server/README.md`'s Publishing section — "Anything you `POST` to `/:topic`
 becomes a message… taken verbatim as UTF-8" — then publish a body that is only whitespace,
