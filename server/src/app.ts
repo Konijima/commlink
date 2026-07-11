@@ -12,6 +12,7 @@ import {
   MAX_BODY_BYTES,
   MAX_TOPIC_LIST_LENGTH,
   TOPIC_LIST_TOO_LONG_RULE,
+  TOPIC_RULE,
   bodyRule,
   createMessage,
   decodeBody,
@@ -119,13 +120,18 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     // (`414`) and a path that is not a valid URL (`400`). Fastify answers both with its
     // default `{ error, code, message }` body, the one shape a client cannot read a
     // plain reason off `error` from. Rewrite them into the `{ error }` shape every other
-    // refusal uses. A `414` here means the topic segment overran the largest legal list,
-    // so its reason names both bounds an over-long one could have broken. Written to the
-    // raw response, the way Fastify's own default framework-error path is.
-    frameworkErrors: (error, _request, reply) => {
+    // refusal uses. The `maxParamLength` cap is sized for the longest legal subscribe
+    // list, so it governs the publish `:topic` segment too: a `414` on a `POST` is a
+    // single over-long topic and hears the one-topic rule, while one on a subscribe `GET`
+    // could be either too many topics or one name too long and names both bounds. Written
+    // to the raw response, the way Fastify's own default framework-error path is.
+    frameworkErrors: (error, request, reply) => {
       const [statusCode, message] =
         error.code === 'FST_ERR_MAX_PARAM_LENGTH'
-          ? ([414, TOPIC_LIST_TOO_LONG_RULE] as const)
+          ? ([
+              414,
+              request.method === 'POST' ? TOPIC_RULE : TOPIC_LIST_TOO_LONG_RULE,
+            ] as const)
           : error.code === 'FST_ERR_BAD_URL'
             ? ([400, MALFORMED_URL_RULE] as const)
             : ([error.statusCode ?? 500, error.message] as const);
