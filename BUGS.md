@@ -13,6 +13,34 @@ Notes: <cause, workaround, or fix once known>
 
 ---
 
+### 11 — token:revoke told the operator a revoked subscriber keeps streaming until it reconnects   [fixed]   severity: low
+Repro: revoke a token while a subscriber is connected with it, and read what the CLI prints.
+
+```
+pnpm token:revoke pixel
+Token "pixel" revoked from ./commlink.sqlite. It no longer authorizes anything.
+An open subscriber keeps its stream until it disconnects.
+```
+
+Notes: the second line — and the command's docstring — claimed a subscriber already holding
+an open stream keeps it until it disconnects, and that the server must be restarted to cut one
+off. That is the opposite of what the server does. The subscribe routes re-check each open
+connection's token against the store every keepalive interval (45s) and drop one whose token
+has been revoked — a WebSocket closed with `1008 "token revoked"`, a `/json` stream ended — with
+no restart (`server/src/subscribe.ts`, `server/src/stream.ts`, pinned by `test/revocation.test.ts`).
+The correct behaviour was already stated in the server README, the `revoke` docstring in
+`tokens.ts`, and the deploy README; only this CLI copy was never updated when the sweep landed.
+
+User-facing: an operator revoking a compromised token was told to needlessly restart the server —
+cutting off every other subscriber — or could believe the compromised subscriber was still live
+when it had in fact already been dropped within the interval.
+
+Fixed by rewording the printed line and the docstring to match the sweep — a subscriber is
+dropped within a keepalive interval (45s), no restart needed, and a restart only makes it
+instant. The CLI test asserted only the first output line, which is why the drift went unnoticed;
+it now pins the corrected guidance (`no restart needed`) and rejects the old wording, so a
+regression fails the suite.
+
 ### 10 — a publish with an over-long topic was refused with the subscribe rule   [fixed]   severity: low
 Repro: publish to a single topic name longer than the router's path-segment limit — about
 3.2 KB, far past the 64-character topic rule:
