@@ -4,10 +4,12 @@
  * The path matters more than it looks. `token:create` writing to one database while the
  * server reads another is a server that authorizes nobody and an operator holding a
  * token that works nowhere — so all three commands read the variable in one place, and
- * read it through the same {@link parseDbPath} the server does.
+ * resolve it exactly as the server does: a `.env` from the working directory first, then
+ * the same {@link parseDbPath}.
  */
 
 import { parseDbPath } from '../dbpath.js';
+import { loadEnvFile } from '../env.js';
 
 /** Refuses, and never returns. */
 export type Fail = (message: string) => never;
@@ -47,23 +49,32 @@ export function oneName(
 }
 
 /**
- * The database path the command acts on, resolved exactly as the server resolves it:
- * {@link parseDbPath} trims a value and refuses a blank or whitespace-only one.
+ * The database path the command acts on, resolved exactly as the server resolves it: a
+ * `.env` from the working directory is loaded first, then {@link parseDbPath} trims the
+ * value and refuses a blank or whitespace-only one.
  *
- * Reading `process.env.DB_PATH` raw — the way this once did — let a command diverge from
- * the server it is meant to share a database with. A blank `DB_PATH=`, or one that is
- * only spaces, is not nullish, so it slipped a default that only fills in an *unset*
- * variable and reached SQLite, which opens an empty filename as a private throwaway
- * database. `token:create` then minted into a file deleted the moment it exits, leaving
- * the operator a token that works nowhere — while the server, which resolves the same
- * value through `parseDbPath`, refuses to boot on it. Resolving both through one function
- * keeps a minted token in the database the server will actually read it from.
+ * Both halves matter, because either one skipped lets a command mint into a database the
+ * server never opens:
  *
- * A blank value is reported through `fail`, in the command's own voice and to stderr,
- * rather than thrown as an uncaught error with a stack trace an operator has to decode.
+ * - The server loads a `.env` before it reads `DB_PATH` (`server.ts`), so `DB_PATH` set
+ *   only in `.env` — the documented way to configure it (`.env.example`) — is where the
+ *   server looks. A command that read the process environment alone would miss it and fall
+ *   back to the default `./commlink.sqlite`, minting where the server never reads. So the
+ *   command loads the same `.env`, from the same working directory; a real environment
+ *   variable still wins, exactly as it does for the server, and a `.env` it cannot parse
+ *   is refused rather than resolved past to a default.
+ * - Reading `process.env.DB_PATH` raw — the way this once did — also let a blank `DB_PATH=`,
+ *   or one that is only spaces, slip the `?? default` that fills in an *unset* variable and
+ *   reach SQLite, which opens an empty filename as a private throwaway database. Routing
+ *   the value through `parseDbPath`, as the server does, refuses it instead.
+ *
+ * Anything wrong — an unparseable `.env`, a blank path — is reported through `fail`, in
+ * the command's own voice and to stderr, rather than thrown as an uncaught error with a
+ * stack trace an operator has to decode.
  */
 export function resolveDbPath(fail: Fail, env: NodeJS.ProcessEnv = process.env): string {
   try {
+    loadEnvFile({ env });
     return parseDbPath(env.DB_PATH);
   } catch (error) {
     return fail((error as Error).message);

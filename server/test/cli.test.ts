@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -268,6 +268,103 @@ describe('the token commands', () => {
       expect(second).not.toBe(first);
       expect(inspect((tokens) => tokens.verify(first))).toBe(false);
       expect(inspect((tokens) => tokens.verify(second))).toBe(true);
+    });
+  });
+
+  // The server loads a `.env` from its working directory before it reads DB_PATH
+  // (server.ts), so an operator who sets DB_PATH only in `.env` — the documented way, via
+  // `.env.example` — points the server at that database. A command that read only the
+  // process environment would resolve DB_PATH to the default `./commlink.sqlite` and mint
+  // into a different file than the server ever opens: a server that authorizes nobody,
+  // holding a token that works nowhere — exactly the split resolving both through one path
+  // is meant to prevent. So the commands load `.env` the same way, from the same cwd.
+  describe('picks up DB_PATH from a .env file the way the server does', () => {
+    /** The `.bin/tsx` shim, run from `cwd` so its `.env` is the one in `cwd`. */
+    const TSX = join(SERVER_DIR, 'node_modules', '.bin', 'tsx');
+
+    async function runIn(
+      cwd: string,
+      env: NodeJS.ProcessEnv,
+      command: string,
+      args: string[],
+    ): Promise<Outcome> {
+      const script = join(SERVER_DIR, 'src', 'cli', `token-${command}.ts`);
+      try {
+        const { stdout, stderr } = await execFileAsync(TSX, [script, ...args], {
+          cwd,
+          env,
+        });
+        return { status: 0, stdout, stderr };
+      } catch (error) {
+        const failed = error as { code?: number; stdout?: string; stderr?: string };
+        return {
+          status: failed.code ?? -1,
+          stdout: failed.stdout ?? '',
+          stderr: failed.stderr ?? '',
+        };
+      }
+    }
+
+    /** The environment a bare `pnpm token:*` runs in, with DB_PATH set nowhere but `.env`. */
+    function envWithoutDbPath(): NodeJS.ProcessEnv {
+      const env = { ...process.env };
+      delete env.DB_PATH;
+      return env;
+    }
+
+    /** Read a database back with no help from the command that wrote it. */
+    function inspectAt<T>(path: string, read: (tokens: TokenStore) => T): T {
+      const tokens = new TokenStore(path);
+      try {
+        return read(tokens);
+      } finally {
+        tokens.close();
+      }
+    }
+
+    it('mints into the database its .env names, not the default', async () => {
+      const fromEnv = join(directory, 'from-env.sqlite');
+      await writeFile(join(directory, '.env'), `DB_PATH=${fromEnv}\n`);
+
+      const created = await runIn(directory, envWithoutDbPath(), 'create', ['pixel']);
+      expect(created.status).toBe(0);
+      expect(created.stdout).toMatch(TOKEN_PATTERN);
+
+      // The token is in the file the server would open from the same `.env`...
+      expect(inspectAt(fromEnv, (tokens) => tokens.verify(created.stdout.trim()))).toBe(
+        true,
+      );
+      // ...and the default `./commlink.sqlite`, relative to the cwd, was never touched.
+      expect(existsSync(join(directory, 'commlink.sqlite'))).toBe(false);
+    });
+
+    it('lets a real DB_PATH env var win over the .env value, as the server does', async () => {
+      const fromEnv = join(directory, 'from-env.sqlite');
+      const fromVar = join(directory, 'from-var.sqlite');
+      await writeFile(join(directory, '.env'), `DB_PATH=${fromEnv}\n`);
+
+      const env = envWithoutDbPath();
+      env.DB_PATH = fromVar;
+      const created = await runIn(directory, env, 'create', ['pixel']);
+      expect(created.status).toBe(0);
+
+      expect(inspectAt(fromVar, (tokens) => tokens.verify(created.stdout.trim()))).toBe(
+        true,
+      );
+      // The `.env` value lost, so its database was never opened.
+      expect(existsSync(fromEnv)).toBe(false);
+    });
+
+    it('refuses a malformed .env rather than resolving past it, naming the command', async () => {
+      // The server aborts on a `.env` it cannot parse; a command that shares the file must
+      // not read past a broken one to a default, or it would mint where the server refuses
+      // to boot. `token:list` reaches the same resolver, so it stands in for all three.
+      await writeFile(join(directory, '.env'), 'this is not KEY=value\n');
+
+      const listed = await runIn(directory, envWithoutDbPath(), 'list', []);
+      expect(listed.status).toBe(1);
+      expect(listed.stderr).toContain('token:list');
+      expect(listed.stderr).toContain('.env line 1');
     });
   });
 
