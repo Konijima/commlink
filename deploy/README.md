@@ -22,6 +22,20 @@ systemctl --user daemon-reload
 systemctl --user enable --now commlink-server.service
 ```
 
+A user service runs only while you have an active login session: systemd starts it
+when you log in and stops it when your last session ends. Deployed as-is it would go
+down the moment you log out and stay down until the next login — not what a push server
+you rely on should do. Enable lingering once so the user manager, and the service with
+it, start at boot and keep running with nobody logged in:
+
+```bash
+sudo loginctl enable-linger "$USER"
+```
+
+The unit's `WantedBy=default.target` then brings the server up at boot. (A system unit
+in `/etc/systemd/system/` runs at boot without this, but then runs as root rather than
+your user — adjust `%h`/`%S` in the paths accordingly.)
+
 The unit points `DB_PATH` at a state directory outside the checkout. `DB_PATH` is
 resolved relative to `WorkingDirectory`, so a unit that leaves it unset writes the
 message database into the source tree — where a redeploy can wipe it.
