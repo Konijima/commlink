@@ -93,6 +93,21 @@ describe('RateLimiter', () => {
     expect(limiter.take(KEY, 0)).not.toBeNull();
   });
 
+  it('starts every token with a full budget on a fresh instance, as a restart makes one', () => {
+    // The window lives in memory, per process: a restarted server — or a second one —
+    // is a new limiter with an empty map, so a token the old instance had exhausted is
+    // within budget again. This is the documented, accepted behaviour for a single
+    // self-hosted server, where the cap only stops a runaway publisher. Pinning it means
+    // a change to persist or share the budget across instances has to be a deliberate
+    // one, not a silent regression of this contract.
+    const spent = new RateLimiter(1, WINDOW_MS);
+    expect(spent.take(KEY, 0)).toBeNull();
+    expect(spent.take(KEY, 0)).not.toBeNull();
+
+    const fresh = new RateLimiter(1, WINDOW_MS);
+    expect(fresh.take(KEY, 0)).toBeNull();
+  });
+
   it('holds no more than `limit` timestamps for a key that keeps being refused', () => {
     const limiter = new RateLimiter(1, WINDOW_MS);
     for (let at = 0; at < 100; at += 1) limiter.take(KEY, at);

@@ -95,10 +95,15 @@ The self-hostable pub/sub core.
       ended). No restart, no held token: the connection is dropped by the id it resolved
       at connect time, and a name minted again gets a fresh id so no dropped subscriber is
       silently re-authorized.
-- [ ] Decide whether the publish rate limit needs to outlive the process. It is counted
-      in memory, so a restart hands every token a fresh budget, and two server processes
-      sharing a database would each grant the full 60. Neither matters to a single
-      self-hosted server, which is the only way it runs today.
+- [x] Decide whether the publish rate limit needs to outlive the process. Settled that it
+      does not: the window stays in memory, per process, on purpose. A restart hands every
+      token a fresh budget and two processes sharing a database would each grant the full
+      60, but the cap exists to stop a runaway publisher drowning subscribers, not to meter
+      a quota that must survive a reboot — and a single self-hosted server is the only way
+      it runs. Persisting it would put a shared store on the publish hot path to buy a
+      guarantee nothing here needs. The deliberate choice is documented at the limiter and
+      pinned by a test, so persisting or sharing the budget later has to be a conscious
+      change rather than a silent regression.
 
 ### Ops
 - [x] Graceful shutdown on `SIGTERM`/`SIGINT`: stop accepting, end the open subscriber

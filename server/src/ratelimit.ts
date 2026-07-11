@@ -31,6 +31,15 @@ export const RATE_LIMIT_CONFIG_RULE = 'rate limit and window must be positive in
  * Memory is bounded: a token holds at most `limit` timestamps, because a request past
  * the limit is refused rather than recorded, and only tokens that have published are
  * held at all.
+ *
+ * The window lives in memory, per process — a deliberate choice, not an oversight. A
+ * restart hands every token a fresh budget, and two processes sharing one database
+ * would each grant the full limit. Neither costs anything to a single self-hosted
+ * server, which is the only way commlink runs: the cap is here to stop a runaway
+ * publisher from drowning subscribers, not to meter a quota that must survive a
+ * reboot. Persisting the window would put a shared store, and its own eviction, on
+ * the publish hot path to buy a guarantee nothing in this deployment needs. If
+ * commlink ever runs as more than one process, that is the point to revisit it.
  */
 export class RateLimiter {
   readonly #limit: number;
