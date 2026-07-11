@@ -5,6 +5,7 @@ import {
   MALFORMED_URL_RULE,
   MAX_TOPIC_LIST_LENGTH,
   TOPIC_LIST_TOO_LONG_RULE,
+  TOPIC_RULE,
 } from '../src/message.js';
 import type { TokenStore } from '../src/tokens.js';
 
@@ -97,6 +98,26 @@ describe('unknown routes', () => {
     expect(res.statusCode).toBe(414);
     expect(res.headers['content-type']).toMatch(/application\/json/);
     expect(res.json()).toEqual({ error: TOPIC_LIST_TOO_LONG_RULE });
+  });
+
+  it('names the single-topic rule when a publish overruns the segment (414)', async () => {
+    // The router's `maxParamLength` is sized for the longest subscribe list, so it caps
+    // the publish `:topic` segment at the same length. A `POST` past it is one over-long
+    // topic, not a topic list, and must hear the one-topic rule rather than the subscribe
+    // wording — a publisher never subscribes and cannot act on "at most 50 topics".
+    let token: string;
+    ({ app, tokens, token } = buildTestApp());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/${'a'.repeat(MAX_TOPIC_LIST_LENGTH + 1)}`,
+      headers: bearer(token),
+      payload: 'hello',
+    });
+
+    expect(res.statusCode).toBe(414);
+    expect(res.headers['content-type']).toMatch(/application\/json/);
+    expect(res.json()).toEqual({ error: TOPIC_RULE });
   });
 
   it('normalizes a malformed request URL (400) into the { error } shape', async () => {
