@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { NO_TOKENS_WARNING, buildApp } from '../src/app.js';
+import { Broker } from '../src/broker.js';
 import {
   DEFAULT_LOG_LEVEL,
   LOG_LEVELS,
@@ -129,5 +130,36 @@ describe('request logging', () => {
     await app.ready();
 
     expect(lines.join('')).not.toContain(NO_TOKENS_WARNING);
+  });
+
+  it('logs when delivering a message to a subscriber throws', async () => {
+    const { lines, stream } = capturingStream();
+    tokens = new TokenStore();
+    const token = tokens.create('pixel');
+    // Inject the broker so the test can attach a subscriber whose delivery throws; the app
+    // wires its logger onto whatever broker it is given.
+    const broker = new Broker();
+    app = buildApp({ broker, tokens, logger: buildLoggerOptions('info', stream) });
+    await app.ready();
+
+    broker.subscribe(['mytopic'], () => {
+      throw new Error('subscriber exploded');
+    });
+
+    // Publishing fans out to the throwing subscriber, so the broker's error hook fires.
+    const res = await app.inject({
+      method: 'POST',
+      url: '/mytopic',
+      headers: { authorization: `Bearer ${token}` },
+      payload: 'hello',
+    });
+    // The publish itself still succeeds — one broken subscriber does not fail the publish.
+    expect(res.statusCode).toBe(200);
+
+    const output = lines.join('');
+    expect(output).toContain('delivering a message to a subscriber failed');
+    expect(output).toContain('"level":50'); // pino's numeric code for error
+    expect(output).toContain('subscriber exploded'); // the thrown error is logged
+    expect(output).toContain('"topic":"mytopic"');
   });
 });

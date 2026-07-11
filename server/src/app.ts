@@ -139,6 +139,19 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
 
   const broker = options.broker ?? new Broker();
 
+  // A subscriber's delivery closure — a WebSocket `send` or a stream `write` — can throw,
+  // and the broker deliberately swallows it so one broken socket cannot silence a topic for
+  // the others. Left unwired that failure is invisible, the one hole in a server that
+  // otherwise logs everything. Route it to the structured log so an operator can see a
+  // delivery that failed rather than a message that quietly reached fewer subscribers than
+  // it should have. This owns the hook on whatever broker the app runs, injected or not.
+  broker.onListenerError = (error, message) => {
+    app.log.error(
+      { err: error, topic: message.topic, id: message.id },
+      'delivering a message to a subscriber failed',
+    );
+  };
+
   const store = options.store ?? new MessageStore();
   if (options.store === undefined) {
     app.addHook('onClose', async () => store.close());
