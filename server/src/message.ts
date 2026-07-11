@@ -67,6 +67,14 @@ export function bodyRule(maxBytes: number = MAX_BODY_BYTES): string {
 export const BODY_ENCODING_RULE = 'message body must be valid UTF-8';
 
 /**
+ * What publish tells a client whose message would show up blank: an empty body — or one
+ * that is only whitespace, which renders just as blank — and no title. A message needs
+ * one or the other to be worth delivering. The stored body is untouched; only this guard
+ * trims, so a message with real content keeps whatever spacing it was sent.
+ */
+export const EMPTY_MESSAGE_RULE = 'message body or X-Title is required';
+
+/**
  * What the server tells a client whose request URL is not a valid URL — a path with a
  * malformed percent-escape, say. The router refuses it before any route runs, so this is
  * the reason a client reads off `error` rather than the framework's default
