@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -134,6 +135,25 @@ describe('the token commands', () => {
       expect(created.status).toBe(1);
       expect(created.stderr).toContain('one name at a time');
       expect(inspect((tokens) => tokens.list())).toEqual([]);
+    });
+
+    it('closes the database even when the mint is refused', async () => {
+      // `fail` exits the process, and an exiting process runs no `finally` — so reporting
+      // the error from inside the `try` would skip the `tokens.close()` in the `finally`
+      // and leave the store open, exactly the hazard token:revoke is structured around. A
+      // left-open connection strands a `-wal` sidecar on disk uncheckpointed; the last
+      // connection closing checkpoints it into the main file and removes it. So an absent
+      // `-wal` after a refused create is the observable proof the store was closed on the
+      // error path too — the same check the server's clean shutdown makes (shutdown.test.ts).
+      const created = await token('create', 'has space');
+
+      expect(created.status).toBe(1);
+      expect(created.stderr).toContain(TOKEN_NAME_RULE);
+      // The constructor opened the database and wrote the schema — a write the connection
+      // holds in the WAL — before the bad name was refused, so a store left open would
+      // strand the sidecar here.
+      expect(existsSync(dbPath)).toBe(true);
+      expect(existsSync(`${dbPath}-wal`)).toBe(false);
     });
   });
 
