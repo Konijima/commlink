@@ -68,6 +68,21 @@ off at once if you would rather not wait the interval out.
 
 ## TLS
 
-Point any reverse proxy that terminates TLS at `http://127.0.0.1:4500`. The included
-`Caddyfile` does this in a couple of lines; nginx, Traefik, or Caddy all work equally
-well.
+Point any reverse proxy that terminates TLS at `http://127.0.0.1:4500`. Two things
+matter for this server, because a subscriber holds one long-lived connection rather than
+making a short request each time:
+
+- **Forward the WebSocket upgrade.** The `/:topic/ws` subscribe route — the primary way
+  clients connect — answers only the WebSocket handshake; a plain request to it without
+  the `Upgrade` and `Connection` headers is a `404`. A proxy that does not pass those
+  headers through therefore breaks subscription entirely, with nothing to explain why.
+- **Do not buffer the response.** The `/:topic/json` fallback streams messages as they
+  are published and never ends on its own, so a proxy that buffers the body holds every
+  line back until the stream closes — that is, until never. The route sends
+  `X-Accel-Buffering: no` to opt out where that header is honoured; a proxy with its own
+  response buffering needs it turned off for this path.
+
+The included `Caddyfile` satisfies both with no extra configuration: Caddy forwards
+WebSocket upgrades and streams responses unbuffered by default. nginx and Traefik work
+too, but only once their WebSocket-upgrade and response-buffering settings are set for
+these routes — the defaults are not enough.
