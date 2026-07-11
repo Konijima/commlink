@@ -81,10 +81,18 @@ export function registerSubscribeRoute(
     }
   });
 
-  app.get<{ Params: { topic: string }; Querystring: { since?: string } }>(
-    '/:topic/ws',
-    { websocket: true },
-    (socket: WebSocket, request) => {
+  app.route<{ Params: { topic: string }; Querystring: { since?: string } }>({
+    method: 'GET',
+    url: '/:topic/ws',
+    // A GET that never upgraded — a browser opening the URL, or a reverse proxy that
+    // dropped the `Upgrade` header (see deploy/README.md). The route matched, so the
+    // not-found handler never runs, and `@fastify/websocket` would otherwise answer a
+    // bare, bodyless 404. Reply in the `{ error }` shape every other refusal uses, so a
+    // client can still read the reason off `error` however it reached here.
+    handler: (_request, reply) => {
+      reply.code(404).send({ error: 'not found' });
+    },
+    wsHandler: (socket: WebSocket, request) => {
       let topics: string[];
       let since: number | null;
       try {
@@ -144,5 +152,5 @@ export function registerSubscribeRoute(
         for (const message of store.since(topics, since)) send(message);
       }
     },
-  );
+  });
 }

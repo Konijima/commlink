@@ -55,6 +55,26 @@ describe('unknown routes', () => {
     },
   );
 
+  it('answers a non-upgrade GET to the ws route with the same 404 shape', async () => {
+    // The subscribe route exists and serves GET, so a plain GET that never upgrades —
+    // a browser opening the URL, or a proxy that dropped the `Upgrade` header — matches
+    // it and never reaches the not-found handler. Without a handler of its own the
+    // websocket plugin answers a bare, bodyless 404; the client must still find the
+    // reason on `error` like it does everywhere else.
+    let token: string;
+    ({ app, tokens, token } = buildTestApp());
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/mytopic/ws',
+      headers: bearer(token),
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.headers['content-type']).toMatch(/application\/json/);
+    expect(res.json()).toEqual({ error: 'not found' });
+  });
+
   it('still refuses an unauthenticated unknown route with 401, not 404', async () => {
     ({ app, tokens } = buildTestApp());
 
