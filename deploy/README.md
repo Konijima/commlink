@@ -9,6 +9,8 @@ This directory holds example configuration you can adapt:
 - [`commlink-server.service`](./commlink-server.service) — a systemd unit that runs the
   server as a service.
 - [`Caddyfile`](./Caddyfile) — a minimal TLS reverse-proxy snippet.
+- [`nginx.conf`](./nginx.conf) — the same for nginx, with the WebSocket and buffering
+  settings this server needs already set.
 
 These are starting points, not turnkey configs — adjust paths, the domain, and the user
 to match your host.
@@ -83,6 +85,8 @@ making a short request each time:
   response buffering needs it turned off for this path.
 
 The included `Caddyfile` satisfies both with no extra configuration: Caddy forwards
-WebSocket upgrades and streams responses unbuffered by default. nginx and Traefik work
-too, but only once their WebSocket-upgrade and response-buffering settings are set for
-these routes — the defaults are not enough.
+WebSocket upgrades and streams responses unbuffered by default. nginx does neither on
+its own — the included [`nginx.conf`](./nginx.conf) sets both explicitly, and its
+comments mark which line does which. Traefik works too, but only once its
+WebSocket-upgrade and response-buffering settings are turned on for these routes; the
+defaults are not enough.
