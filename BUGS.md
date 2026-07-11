@@ -13,6 +13,34 @@ Notes: <cause, workaround, or fix once known>
 
 ---
 
+### 16 — the server README claimed a `?auth=` token never reaches any log   [fixed]   severity: low
+Repro: read the logging note in `server/README.md`, then deploy behind the shipped
+`deploy/nginx.conf`, subscribe with the token in the URL, and read nginx's access log.
+
+```
+websocat "wss://push.example.com/mytopic/ws?auth=$TOKEN"
+# nginx access log:
+# 127.0.0.1 - - [.../...] "GET /mytopic/ws?auth=<TOKEN> HTTP/1.1" 101 ...
+```
+
+Notes: the README said a `?auth=<token>` subscribe token "is redacted from the request line,
+so a token never reaches the log — the only place it could, since it rides in the URL". The
+redaction (`server/src/logging.ts`, `redactAuthInUrl`) is real but scopes only to the
+server's own pino request log. A reverse proxy in front logs the request line as it arrived,
+and nginx's default `combined` format writes the full URI — query string and all — so the
+token lands in the proxy's access log in clear. The README even contradicted itself: the auth
+section explains publishing does *not* take `?auth=` precisely because "a query string is the
+part of a URL that proxies and access logs write down". The claim was true of the server's log
+and false of the proxy's, stated as an absolute. Same theme as #14 and #15: a doc claim about
+what a proxy does with the request that the proxy does not honour.
+
+Fixed by scoping the README claim to the server's own log and stating plainly that a proxy's
+access log records `?auth=` in clear unless told not to, pointing at `deploy/` for how. Added
+a matching note to `deploy/README.md`'s TLS section and a commented `log_format` in
+`deploy/nginx.conf` that logs `$uri` (path only) in place of `$request`, so an operator whose
+subscribers use `?auth=` can keep the token out of the proxy log. Docs and example config
+only; no code or shipped-config behaviour changed.
+
 ### 15 — the deploy guide told Traefik users to turn response buffering on   [fixed]   severity: low
 Repro: read `deploy/README.md`'s TLS section, which lists "Do not buffer the response" as a
 requirement for the `/:topic/json` stream, then reaches its closing note on other proxies.

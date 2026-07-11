@@ -415,8 +415,12 @@ start on anything else rather than run with a window that would never expire a m
 
 `LOG_LEVEL` is one of `trace`, `debug`, `info`, `warn`, `error`, `fatal`, or `silent`, and
 an unknown value refuses to start the same way. Logs are structured JSON on stdout. A
-subscribe token passed as `?auth=<token>` is redacted from the request line, so a token
-never reaches the log — the only place it could, since it rides in the URL.
+subscribe token passed as `?auth=<token>` is redacted from the request line before the
+server logs it, so it does not reach the server's own log. A reverse proxy in front is a
+separate matter: `?auth=` rides in the URL, and a proxy's access log records the request
+line as it arrived — nginx's default format logs the full URI, query string and all — so
+the token lands there in clear unless the proxy is told not to log it. See
+[`../deploy/`](../deploy/) for how to keep it out of the proxy's log.
 
 The server binds loopback by default. To expose it, put it behind a TLS reverse proxy —
 see [`../deploy/`](../deploy/) — or set `HOST` to a specific address on a trusted network.
