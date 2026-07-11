@@ -453,6 +453,9 @@ live messages. "header" is `Authorization: Bearer <token>`; see
 token (see [Rate limit](#rate-limit)) and 4096 bytes per body (see
 [Body size](#body-size)); the other three routes are uncapped.
 
-Every refusal answers with the same JSON shape — `{"error":"<reason>"}` — including an
-unknown path or an unsupported method, which return `404 {"error":"not found"}`. A client
-can read the reason off `error` on any response it did not expect.
+Every refusal answers with the same JSON shape — `{"error":"<reason>"}` — so a client can
+read the reason off `error` on any response it did not expect. An _authenticated_ request
+to an unknown path or an unsupported method gets `404 {"error":"not found"}` in that shape.
+A request without a valid token hears `401` first, though: authentication runs before the
+route is resolved, and only `/healthz` is open, so a token-less probe of an unknown path is
+a `401`, not the `404`.

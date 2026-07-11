@@ -13,6 +13,37 @@ Notes: <cause, workaround, or fix once known>
 
 ---
 
+### 20 — the server README said an unknown path "returns a `404`" without qualification   [fixed]   severity: low
+Repro: read the API section of `server/README.md`, then probe an unknown path the way it
+implies — with `curl`, without a token.
+
+```
+curl -i http://127.0.0.1:4500/no-such-path
+HTTP/1.1 401 Unauthorized
+{"error":"a valid bearer token is required"}
+```
+
+Notes: the section said every refusal answers in the `{ "error": … }` shape, "including an
+unknown path or an unsupported method, which return `404 {"error":"not found"}`". That is
+only true once the request is authenticated. Auth runs in a `preValidation` hook
+(`server/src/auth.ts`) that requires a token on every route but `/healthz`, and an unknown
+path matches no route — so it is refused with `401` before the not-found handler's `404`
+ever runs. The codebase already draws this line: `server/src/app.ts`'s not-found handler
+carries a comment that "an unauthenticated request still hears `401` before it learns
+whether the route exists", and `test/notfound.test.ts` pins both sides (an *authenticated*
+unknown route is `404`; a token-less one is `401`, not `404`). A client reading the API
+table would probe an unknown path with a token-less `curl` — the natural thing to try — see
+the `401`, and read it as a credential problem rather than the missing route it is.
+
+Same theme as #14–#19, and the exact claim #17 corrected for `deploy/README.md`'s `/ws`
+probe: an absolute statement about what a request returns that holds only under a condition
+the doc did not state — here, that the request is already authenticated.
+
+Fixed by scoping the README claim — an *authenticated* request to an unknown path or an
+unsupported method is the `404`; a request without a valid token hears `401` first, because
+auth precedes route resolution and only `/healthz` is open. Docs only; no code or shipped
+behaviour changed, and the `401`/`404` split is already pinned by `test/notfound.test.ts`.
+
 ### 19 — the token commands ignored a `DB_PATH` set in `.env`, so tokens were minted into a different database than the server read   [fixed]   severity: medium
 Repro: follow the documented setup — copy `.env.example` to `.env`, set `DB_PATH` there
 (and nowhere else), then mint a token and start the server:
