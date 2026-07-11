@@ -31,7 +31,8 @@ pnpm build       # emits dist/, which the unit runs
 Then install and start the unit:
 
 ```bash
-# Adjust WorkingDirectory / ExecStart / User in the unit first.
+# Adjust WorkingDirectory and ExecStart in the unit first. A user service runs as you,
+# so there is no User= line to set — systemd does not honor one in a user unit.
 cp commlink-server.service ~/.config/systemd/user/    # user service
 systemctl --user daemon-reload
 systemctl --user enable --now commlink-server.service
@@ -47,9 +48,11 @@ it, start at boot and keep running with nobody logged in:
 sudo loginctl enable-linger "$USER"
 ```
 
-The unit's `WantedBy=default.target` then brings the server up at boot. (A system unit
-in `/etc/systemd/system/` runs at boot without this, but then runs as root rather than
-your user — adjust `%h`/`%S` in the paths accordingly.)
+The unit's `WantedBy=default.target` then brings the server up at boot. A system unit in
+`/etc/systemd/system/` runs at boot without lingering, but starts as root: add a
+`User=`/`Group=` for a dedicated unprivileged account so the server does not run with more
+than it needs, and adjust the `%h`/`%S` paths, which then resolve against that account
+rather than your home.
 
 The unit points `DB_PATH` at a state directory outside the checkout. `DB_PATH` is
 resolved relative to `WorkingDirectory`, so a unit that leaves it unset writes the
