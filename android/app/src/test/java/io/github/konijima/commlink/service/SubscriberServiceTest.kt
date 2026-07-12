@@ -11,6 +11,7 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.SocketPolicy
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -238,6 +239,41 @@ class SubscriberServiceTest {
         settle()
         assertEquals(connected(), statusText())
         assertEquals("builds", statusTopics())
+    }
+
+    @Test
+    fun `goes on saying it is connected when it is started again with the subscription it holds`() {
+        // Launching a configured build a second time starts the service again with the
+        // subscription it is already connected with. That start opens no socket — rightly, the
+        // connection it asks for is up — so no Connected event follows it, and nothing would
+        // ever repaint a notification the start had overwritten with "Connecting…".
+        serving { }
+
+        val controller = startService(subscription("alerts"))
+        waitFor("the connection to report itself up") { statusText() == connected() }
+
+        controller.get()
+            .onStartCommand(SubscriberService.startIntent(context, subscription("alerts")), 0, 0)
+
+        assertEquals("the connection is up and the app must go on saying so", connected(), statusText())
+        // And it stays up, rather than being repainted by anything still in flight.
+        settle()
+        assertEquals(connected(), statusText())
+        assertEquals("the connection it already holds must not be reopened", 1, server.requestCount)
+    }
+
+    @Test
+    fun `says it is connecting while the socket is still opening`() {
+        // The other half of the rule: a start that really does open a socket must say so, or
+        // holding the state would just mean never showing progress. The server takes the
+        // handshake and never answers it, which is what a connection in progress looks like.
+        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+
+        startService(subscription("alerts"))
+
+        waitFor("the handshake to reach the server") { server.requestCount == 1 }
+        settle()
+        assertEquals(context.getString(io.github.konijima.commlink.R.string.status_connecting), statusText())
     }
 
     @Test

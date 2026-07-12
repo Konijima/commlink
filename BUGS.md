@@ -63,7 +63,7 @@ Mutation-checked: removing the `pingInterval` line fails the half-open case with
 no event" — which is the bug itself, the app waiting forever — and leaves the live-connection case
 green, so the pin is on the ping and not on the connection.
 
-### 31 — starting the service again while it is connected sticks the notification on "Connecting…"   [open]   severity: medium
+### 31 — starting the service again while it is connected sticks the notification on "Connecting…"   [fixed]   severity: medium
 Repro: launch the app twice with the same subscription while the service is already connected and
 holding it — a second launch of a configured debug build does exactly this.
 
@@ -79,6 +79,33 @@ socket is fine and messages still arrive; the app's only status display is simpl
 
 The fix is to hold the current state rather than infer it: post `CONNECTING` when about to connect,
 and otherwise re-post the state already held.
+
+Fixed that way. The service now holds a `state` field — what the connection is doing, as the
+notification last reported it — and `onStartCommand` decides *before* posting whether this start is
+going to open a socket at all (`willConnect`: the subscription is valid, and it is not the one an
+open connection is already carrying). A start that will connect sets `CONNECTING`; a start that will
+not leaves the state its connection reached alone, so re-launching a configured build re-posts
+"Connected" over "Connected" instead of overwriting it with a progress message that nothing would
+ever repaint. The two used to be the same line of code because a start was taken as evidence of a
+connection; they are now the same decision, made once and used by both the notification and the
+reconnect below it, so the notification cannot again say one thing while the connection does
+another.
+
+The state is written in exactly one other place — the event handler that already repaints the
+notification on `Connected` and `Disconnected` — so what the field says and what the shade shows
+cannot drift apart. It starts at `DISCONNECTED`: before the first start nothing has been attempted,
+and a service that is stopping for want of a subscription says so rather than claiming to be
+connecting to it.
+
+Pinned by two cases in `service/SubscriberServiceTest.kt`, one per half of the rule. A service that
+is connected and is started again with the subscription it already holds goes on saying "Connected"
+— through the start, and after the main looper is drained, so nothing still in flight repaints it —
+and opens no second connection. The converse case is what stops the fix from curing the lie by never
+reporting progress at all: a start that really does open a socket must say "Connecting…", so the
+server takes the handshake and never answers it (`SocketPolicy.NO_RESPONSE`), which is what a
+connection in progress actually looks like. Mutation-checked separately, and each mutant fails only
+its own case: restoring the unconditional `CONNECTING` fails the first, and never setting
+`CONNECTING` fails the second.
 
 ### 30 — nothing pins that two different messages get two different notifications   [open]   severity: medium
 Repro: none — the shipped behaviour is correct. This is a hole in the suite, not in the app.

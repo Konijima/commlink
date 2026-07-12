@@ -45,6 +45,16 @@ class SubscriberService : Service() {
     private var subscription: Subscription? = null
 
     /**
+     * What the connection is doing, as the notification last reported it. The service holds
+     * this rather than inferring it from what just happened, because a start is not evidence
+     * of a connection: a start carrying the subscription the service already holds opens
+     * nothing, so no [SubscriberEvent.Connected] follows it, and a notification repainted
+     * "Connecting…" on the way past would stay there over a connection that is up and
+     * delivering. Nothing has been attempted yet, so it begins disconnected.
+     */
+    private var state = ConnectionState.DISCONNECTED
+
+    /**
      * Which connection the service is listening to. A closed socket still reports its own
      * close, and that report arrives after the replacement is already up — so an event is
      * matched against the connection it came from and dropped if that one has been replaced.
@@ -69,12 +79,21 @@ class SubscriberService : Service() {
         // what the service was last started with is what it comes back with.
         val requested = intent?.let(::subscriptionFrom) ?: store.load()
 
+        // A start opens a socket only if it asks for something the service is not already
+        // holding. Decide that before the notification, so the notification reports what this
+        // start is about to do rather than what a start usually does: a start that reconnects
+        // is connecting, and a start that finds its connection already open leaves the state
+        // that connection reached alone.
+        val willConnect = requested != null && requested.isValid() &&
+            (requested != subscription || connection == null)
+        if (willConnect) state = ConnectionState.CONNECTING
+
         // The notification goes up first, whatever happens next. A service started with
         // `startForegroundService` has a few seconds to show one or the system kills the
         // process — including on the paths below, which stop the service straight away.
         startForeground(
             STATUS_NOTIFICATION_ID,
-            statusNotification(this, ConnectionState.CONNECTING, requested?.topics.orEmpty()),
+            statusNotification(this, state, (requested ?: subscription)?.topics.orEmpty()),
         )
 
         if (requested == null || !requested.isValid()) {
@@ -86,7 +105,7 @@ class SubscriberService : Service() {
             return START_NOT_STICKY
         }
 
-        if (requested != subscription || connection == null) {
+        if (willConnect) {
             store.save(requested)
             connect(requested)
         }
@@ -137,6 +156,7 @@ class SubscriberService : Service() {
     }
 
     private fun showStatus(state: ConnectionState) {
+        this.state = state
         post(STATUS_NOTIFICATION_ID, statusNotification(this, state, subscription?.topics.orEmpty()))
     }
 
