@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -34,6 +35,17 @@ android {
 
     buildFeatures {
         compose = true
+        // The activity's debug-only configuration path is compiled out of a release build,
+        // which needs BuildConfig.DEBUG to read.
+        buildConfig = true
+    }
+
+    testOptions {
+        unitTests {
+            // The service's tests run against a real notification manager and real
+            // preferences under Robolectric, which needs the app's resources.
+            isIncludeAndroidResources = true
+        }
     }
 }
 
@@ -55,5 +67,10 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
+    implementation(libs.okhttp)
+    implementation(libs.kotlinx.serialization.json)
+
     testImplementation(libs.junit)
+    testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.robolectric)
 }

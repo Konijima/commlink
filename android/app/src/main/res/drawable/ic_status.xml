@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A status-bar icon is drawn as a silhouette: only its alpha is kept, so it is one
+     opaque shape and no colour. Broadcast waves over a point — a message arriving. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,10m-2,0a2,2 0,1 1,4 0a2,2 0,1 1,-4 0" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M7.76,5.76 L6.34,4.34C4.72,5.96 3.72,8.2 3.72,10.67c0,2.47 1,4.71 2.62,6.33l1.42,-1.42C6.5,14.32 5.72,12.59 5.72,10.67C5.72,8.75 6.5,7.02 7.76,5.76z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M17.66,4.34 L16.24,5.76c1.26,1.26 2.04,2.99 2.04,4.91c0,1.92 -0.78,3.65 -2.04,4.91l1.42,1.42c1.62,-1.62 2.62,-3.86 2.62,-6.33C20.28,8.2 19.28,5.96 17.66,4.34z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M11,13h2v8h-2z" />
+</vector>

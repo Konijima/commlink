@@ -1,4 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">commlink</string>
+
+    <string name="channel_status">Connection</string>
+    <string name="channel_status_description">Whether the app is connected to your server. Silent, and always shown while the app is subscribed.</string>
+    <string name="channel_messages">Messages</string>
+    <string name="channel_messages_description">Messages published to the topics you subscribe to.</string>
+
+    <string name="status_connecting">Connecting…</string>
+    <string name="status_connected">Connected</string>
+    <string name="status_disconnected">Not connected</string>
 </resources>

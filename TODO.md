@@ -271,10 +271,27 @@ next thing to build** — the server it talks to is done and running.
       tests run on the JVM.
 
 ### Connection service
-- [ ] `SubscriberService` — a `START_STICKY` foreground service holding one multiplexed
-      WebSocket for all subscribed topics, with a persistent low-priority notification.
+- [x] `SubscriberService` — a `START_STICKY` foreground service holding one multiplexed
+      WebSocket for all subscribed topics, with a persistent low-priority notification. A
+      foreground service is the only way Android lets an app keep a socket open when nobody is
+      looking at it, and the notification is the price; it is posted on a low-importance channel,
+      so it is silent, and it says which topics it is holding open. `START_STICKY` restarts the
+      service with a *null* intent, so the subscription is written down when it is given and read
+      back on restart — otherwise the restart the flag exists to get would bring the service back
+      with nothing to connect to. A message that arrives is posted as a notification whose id is
+      derived from the message's own, so a message delivered twice — which a replaying reconnect
+      does, since `?since=` is inclusive — updates its notification rather than stacking a second
+      copy. Keepalive needs no code: the server pings, and OkHttp answers from its reader thread.
+      Twenty-six unit tests cover it, on the JVM and with no emulator: the client is driven against
+      a real WebSocket on the loopback interface (the token on the handshake, both topics on one
+      socket, a message decoded, `1008` and a refused handshake reported apart), and the service
+      under Robolectric from the intent that starts it through the socket to the notification the
+      message becomes. A frame the app cannot read is reported and skipped rather than taking the
+      connection down with it, and a server that adds a field the app does not know does not stop
+      it delivering.
 - [ ] Reconnect with exponential backoff (1s → 2s → 4s … cap 5 min) plus jitter;
-      reconnect immediately on network-change callbacks.
+      reconnect immediately on network-change callbacks. Until this lands a dropped connection
+      stays dropped: the service says so in its notification and waits to be started again.
 - [ ] On reconnect, request replay with `?since=<last_seen_timestamp>` so nothing is lost.
 - [ ] Send pong responses; force-reconnect if no server ping arrives for 90s.
 - [ ] Boot receiver restarts the service after reboot (`RECEIVE_BOOT_COMPLETED`).
@@ -283,7 +300,8 @@ next thing to build** — the server it talks to is done and running.
 
 ### Notifications
 - [ ] One notification channel per priority (min/low/default/high/urgent) so per-priority
-      sound/vibration is configurable in system settings.
+      sound/vibration is configurable in system settings. Today every message lands on a single
+      `messages` channel of default importance, which the five replace.
 - [ ] Priority 5 → high-importance heads-up; priority 1–2 → silent.
 - [ ] Tapping a notification opens that topic's message list in-app.
 
@@ -292,7 +310,9 @@ next thing to build** — the server it talks to is done and running.
 - [ ] Messages screen: reverse-chronological messages with title/body/tags/time.
 - [ ] Settings screen: server URL, auth token, connection status, battery-exemption
       status, and a "test notification" button. The token goes on every subscribe, as
-      `Authorization: Bearer …` on the WebSocket handshake.
+      `Authorization: Bearer …` on the WebSocket handshake. Until it exists, a debug build is
+      pointed at a server from the command line (`android/README.md`) — which is a developer's
+      affordance, off in a release build, not a way to configure the app.
 - [ ] Persist topics and messages in Room; cap 500 messages per topic locally.
 
 ### Build & distribution
