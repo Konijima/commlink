@@ -246,12 +246,23 @@ next thing to build** — the server it talks to is done and running.
 
 ### Project setup
 
-- [ ] Scaffold the Gradle project so there is something to build: a Gradle wrapper, an `app`
-      module (Kotlin, Compose, min SDK 26, no Play Services), and the reverse-DNS application
-      id `android/README.md` names. It builds and its unit tests run from the command line
-      with `./gradlew test` and `./gradlew assembleDebug`.
+- [x] Scaffold the Gradle project so there is something to build: a Gradle wrapper (8.13), an
+      `app` module (Kotlin, Compose, min SDK 26, compiled and targeted against SDK 35, no Play
+      Services), and the reverse-DNS application id `android/README.md` names. It builds and its
+      unit tests run from the command line with `./gradlew test` and `./gradlew assembleDebug`.
+      Dependency versions live in one place (`gradle/libs.versions.toml`), and the modules may
+      resolve only from the repositories the build as a whole declares. The app launches to a
+      placeholder screen — it subscribes to nothing yet — but it is not an empty shell: it ships
+      the URL a subscriber connects to (`SubscribeUrl`), which restates the server's topic rules
+      (1–64 characters of its alphabet, at most 50 topics on one connection, `healthz` reserved)
+      so a bad subscription is refused on the device, where the reason can be shown, rather than
+      at the far end of a socket that closes with a code. Thirteen unit tests cover it, and the
+      auth token is deliberately not in that URL: it rides on the handshake as
+      `Authorization: Bearer …`, since a query string is what proxies and access logs write down.
 - [ ] Add a CI job that builds the app and runs its unit tests, so the client is covered the
-      way the server is. It gates alongside the existing `verify` job.
+      way the server is. It gates alongside the existing `verify` job, and checks the Gradle
+      wrapper the repository ships against its published checksum — a wrapper jar is a binary
+      a clone executes, so it should be verified rather than trusted.
 
 ### Connection service
 - [ ] `SubscriberService` — a `START_STICKY` foreground service holding one multiplexed
