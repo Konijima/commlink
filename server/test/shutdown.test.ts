@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import { installShutdownHandlers } from '../src/shutdown.js';
 import { TokenStore } from '../src/tokens.js';
-import { bearer } from './helpers.js';
+import { SUBPROCESS_TIMEOUT_MS, bearer } from './helpers.js';
 
 /** RFC 6455 close code the peer reports when a close frame carried no status. */
 const CLOSE_NO_STATUS = 1005;
@@ -159,89 +159,97 @@ describe('the server process shuts down gracefully on SIGTERM', () => {
     await rm(directory, { recursive: true, force: true });
   });
 
-  it('closes an open subscriber and exits 0', async () => {
-    // Seed a token the spawned server will authenticate the subscriber against.
-    const dbPath = join(directory, 'commlink.sqlite');
-    const seed = new TokenStore(dbPath);
-    const token = seed.create('test');
-    seed.close();
+  it(
+    'closes an open subscriber and exits 0',
+    async () => {
+      // Seed a token the spawned server will authenticate the subscriber against.
+      const dbPath = join(directory, 'commlink.sqlite');
+      const seed = new TokenStore(dbPath);
+      const token = seed.create('test');
+      seed.close();
 
-    // Port 0 lets the OS pick a free port, so the test never collides with a real server.
-    child = spawn(process.execPath, ['--import', 'tsx', 'src/server.ts'], {
-      cwd: SERVER_DIR,
-      env: { ...process.env, DB_PATH: dbPath, PORT: '0', HOST: '127.0.0.1' },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+      // Port 0 lets the OS pick a free port, so the test never collides with a real server.
+      child = spawn(process.execPath, ['--import', 'tsx', 'src/server.ts'], {
+        cwd: SERVER_DIR,
+        env: { ...process.env, DB_PATH: dbPath, PORT: '0', HOST: '127.0.0.1' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
 
-    const address = await waitForListening(child);
-    const socket = new WebSocket(`${address.replace(/^http/, 'ws')}/test/ws`, {
-      headers: bearer(token),
-    });
+      const address = await waitForListening(child);
+      const socket = new WebSocket(`${address.replace(/^http/, 'ws')}/test/ws`, {
+        headers: bearer(token),
+      });
 
-    const closeCode = new Promise<number>((resolve) => {
-      socket.once('close', (code) => resolve(code));
-    });
-    const exitCode = new Promise<number | null>((resolve) => {
-      child?.once('exit', (code) => resolve(code));
-    });
+      const closeCode = new Promise<number>((resolve) => {
+        socket.once('close', (code) => resolve(code));
+      });
+      const exitCode = new Promise<number | null>((resolve) => {
+        child?.once('exit', (code) => resolve(code));
+      });
 
-    await new Promise<void>((resolve, reject) => {
-      socket.once('open', () => resolve());
-      socket.once('error', reject);
-    });
+      await new Promise<void>((resolve, reject) => {
+        socket.once('open', () => resolve());
+        socket.once('error', reject);
+      });
 
-    child.kill('SIGTERM');
+      child.kill('SIGTERM');
 
-    // The subscriber is closed with a close frame (not a severed socket), and the process
-    // stops of its own accord with a success code — the two halves of a clean shutdown.
-    expect(await closeCode).not.toBe(CLOSE_ABNORMAL);
-    expect(await closeCode).toBe(CLOSE_NO_STATUS);
-    expect(await exitCode).toBe(0);
-  }, 20_000);
+      // The subscriber is closed with a close frame (not a severed socket), and the process
+      // stops of its own accord with a success code — the two halves of a clean shutdown.
+      expect(await closeCode).not.toBe(CLOSE_ABNORMAL);
+      expect(await closeCode).toBe(CLOSE_NO_STATUS);
+      expect(await exitCode).toBe(0);
+    },
+    SUBPROCESS_TIMEOUT_MS,
+  );
 
-  it('closes its databases, checkpointing the WAL away', async () => {
-    // The entrypoint opens the message and token stores itself, so it — not `buildApp` —
-    // owns closing them. A clean stop must reach all the way down to SQLite: with the
-    // databases open, `journal_mode = WAL` leaves a `-wal` sidecar on disk; the last
-    // connection closing checkpoints it into the main file and removes it. So an absent
-    // `-wal` after the process exits is the observable proof that both connections were
-    // closed, where counting `close()` calls from outside the process cannot reach.
-    const dbPath = join(directory, 'commlink.sqlite');
-    const seed = new TokenStore(dbPath);
-    const token = seed.create('test');
-    seed.close();
+  it(
+    'closes its databases, checkpointing the WAL away',
+    async () => {
+      // The entrypoint opens the message and token stores itself, so it — not `buildApp` —
+      // owns closing them. A clean stop must reach all the way down to SQLite: with the
+      // databases open, `journal_mode = WAL` leaves a `-wal` sidecar on disk; the last
+      // connection closing checkpoints it into the main file and removes it. So an absent
+      // `-wal` after the process exits is the observable proof that both connections were
+      // closed, where counting `close()` calls from outside the process cannot reach.
+      const dbPath = join(directory, 'commlink.sqlite');
+      const seed = new TokenStore(dbPath);
+      const token = seed.create('test');
+      seed.close();
 
-    child = spawn(process.execPath, ['--import', 'tsx', 'src/server.ts'], {
-      cwd: SERVER_DIR,
-      env: { ...process.env, DB_PATH: dbPath, PORT: '0', HOST: '127.0.0.1' },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+      child = spawn(process.execPath, ['--import', 'tsx', 'src/server.ts'], {
+        cwd: SERVER_DIR,
+        env: { ...process.env, DB_PATH: dbPath, PORT: '0', HOST: '127.0.0.1' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
 
-    const address = await waitForListening(child);
+      const address = await waitForListening(child);
 
-    // Publish through the running server so its own connection writes to the WAL — the
-    // seed above wrote through a different connection that is already closed, taking its
-    // WAL with it. Without a write the server is holding, there would be no `-wal` to
-    // assert was cleaned up.
-    const published = await fetch(`${address}/mytopic`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}` },
-      body: 'hello',
-    });
-    expect(published.status).toBe(200);
+      // Publish through the running server so its own connection writes to the WAL — the
+      // seed above wrote through a different connection that is already closed, taking its
+      // WAL with it. Without a write the server is holding, there would be no `-wal` to
+      // assert was cleaned up.
+      const published = await fetch(`${address}/mytopic`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        body: 'hello',
+      });
+      expect(published.status).toBe(200);
 
-    const wal = `${dbPath}-wal`;
-    // The server is holding an uncheckpointed write, so the sidecar is on disk right now.
-    expect(existsSync(wal)).toBe(true);
+      const wal = `${dbPath}-wal`;
+      // The server is holding an uncheckpointed write, so the sidecar is on disk right now.
+      expect(existsSync(wal)).toBe(true);
 
-    const exitCode = new Promise<number | null>((resolve) => {
-      child?.once('exit', (code) => resolve(code));
-    });
-    child.kill('SIGTERM');
+      const exitCode = new Promise<number | null>((resolve) => {
+        child?.once('exit', (code) => resolve(code));
+      });
+      child.kill('SIGTERM');
 
-    expect(await exitCode).toBe(0);
-    // Both connections were closed on the way out, so SQLite checkpointed the WAL into
-    // the main database and deleted the sidecar. Left open, it would still be here.
-    expect(existsSync(wal)).toBe(false);
-  }, 20_000);
+      expect(await exitCode).toBe(0);
+      // Both connections were closed on the way out, so SQLite checkpointed the WAL into
+      // the main database and deleted the sidecar. Left open, it would still be here.
+      expect(existsSync(wal)).toBe(false);
+    },
+    SUBPROCESS_TIMEOUT_MS,
+  );
 });

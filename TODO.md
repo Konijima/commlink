@@ -251,8 +251,9 @@ next thing to build** — the server it talks to is done and running.
       Services), and the reverse-DNS application id `android/README.md` names. It builds and its
       unit tests run from the command line with `./gradlew test` and `./gradlew assembleDebug`.
       Dependency versions live in one place (`gradle/libs.versions.toml`), and the modules may
-      resolve only from the repositories the build as a whole declares. The app launches to a
-      placeholder screen — it subscribes to nothing yet — but it is not an empty shell: it ships
+      resolve only from the repositories the build as a whole declares. The app launched to a
+      placeholder screen — it subscribed to nothing at this point; the service below is what
+      changed that — but it was not an empty shell even then: it ships
       the URL a subscriber connects to (`SubscribeUrl`), which restates the server's topic rules
       (1–64 characters of its alphabet, at most 50 topics on one connection, `healthz` reserved)
       so a bad subscription is refused on the device, where the reason can be shown, rather than

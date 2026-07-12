@@ -50,7 +50,7 @@ publisher ──HTTP POST──►  commlink server  ──WebSocket──►  A
 | Directory  | What it is                                                             |
 | ---------- | --------------------------------------------------------------------- |
 | `server/`  | The pub/sub server — Node.js + TypeScript, Fastify, WebSocket, SQLite. |
-| `android/` | The native Android client — Kotlin, Jetpack Compose, OkHttp, Room.     |
+| `android/` | The native Android client — Kotlin, Jetpack Compose, OkHttp.           |
 | `deploy/`  | Generic deployment notes: a systemd unit and a TLS reverse-proxy snippet. |
 
 ## Quick start (server)
