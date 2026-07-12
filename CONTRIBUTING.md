@@ -34,6 +34,22 @@ is the only check that catches a build that compiles but cannot start.
 New server behaviour should land with tests. Keep the dependency surface small — this
 project intentionally avoids heavy frameworks and proprietary services.
 
+### Android
+
+Requirements: a JDK (17 or newer) and an Android SDK with platform 35. Gradle itself comes
+from the wrapper — see `android/README.md` for pointing the build at your SDK.
+
+```bash
+cd android
+./gradlew test           # unit tests, on the JVM: no device or emulator needed
+./gradlew assembleDebug  # app/build/outputs/apk/debug/app-debug.apk
+```
+
+CI runs both on every pull request, and checks the committed Gradle wrapper jar against
+Gradle's published checksums. If you change the wrapper, regenerate it with
+`./gradlew wrapper --gradle-version <version>` rather than editing it by hand — a wrapper
+jar is a binary that every clone executes, so a hand-made one is refused.
+
 ## Branching & pull requests
 
 - Branch off `develop`: `feature/<area>-<slug>`, `fix/<slug>`, or `chore/<slug>`.
@@ -53,6 +69,7 @@ small and atomic.
 - [ESLint](https://eslint.org) and [Prettier](https://prettier.io) enforce the style;
   `pnpm lint` checks both and `pnpm format` rewrites files to match. CI runs `pnpm lint`
   alongside `pnpm typecheck`, `pnpm test` and `pnpm smoke`, so run them before opening a
-  pull request.
+  pull request. The Android app is covered by its own CI job (`./gradlew test` and
+  `./gradlew assembleDebug`); run those before opening a pull request that touches it.
 - No secrets in the repo — configuration comes from environment variables (see
   `server/.env.example`).

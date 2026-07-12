@@ -38,6 +38,11 @@ itself — comes from the wrapper, so there is nothing to install globally:
 
 The first run downloads Gradle and the build's dependencies, so give it a few minutes.
 
+Both commands run in CI on every pull request, which also checks the wrapper jar this
+repository ships against Gradle's published checksums — the jar is a binary every clone
+executes, so it is verified rather than trusted. Change the wrapper with
+`./gradlew wrapper --gradle-version <version>`, never by hand.
+
 ## Layout
 
 ```
