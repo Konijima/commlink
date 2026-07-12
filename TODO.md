@@ -112,11 +112,16 @@ The self-hostable pub/sub core.
       `$XDG_STATE_HOME` are the right state root for each manager, so it needs no adjusting.
       `test/deployunit.test.ts` refuses a `%h` in any directive of the shipped unit, so the trap
       cannot creep back in.
-- [ ] Point an operator at the database the server actually reads (`BUGS.md#24`). The startup
-      warning names `pnpm token:create <name>`, which under the shipped unit mints into the
-      checkout rather than the unit's `DB_PATH` — the same "authorizes nobody" outcome as the
-      two footguns before it. Also state that the state directory does not exist until the
-      first start, so a token cannot be minted before it.
+- [x] Point an operator at the database the server actually reads (`BUGS.md#24`). The startup
+      warning named the bare `pnpm token:create <name>`, which under the shipped unit mints into
+      the checkout rather than the unit's `DB_PATH` — the same "authorizes nobody" outcome as the
+      two footguns before it. The token store now knows the file it opened, so the warning names
+      that database and mints against it by name (`DB_PATH=… pnpm token:create <name>`), which is
+      right wherever the operator runs it; `token:list` suggests the same form. The commands also
+      opened the store outside their own error handling, so a `DB_PATH` whose directory does not
+      exist — every path before the first start, since the unit's `StateDirectory=` creates it *at*
+      first start — threw a stack trace naming neither the command nor the setting; they now refuse
+      in their own voice and name `DB_PATH`. The deploy guide says to start the service, then mint.
 - [ ] Correct the status codes the subscribe docs promise for an over-long topic list
       (`BUGS.md#23`): it is a `414` from the router, not the route's `400`, and on the socket
       it arrives before the upgrade rather than as a `1008` close.

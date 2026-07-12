@@ -92,6 +92,13 @@ function isUniqueViolation(error: unknown): boolean {
  * as long as nobody has gotten around to securing it.
  */
 export class TokenStore {
+  /**
+   * The database this store opened. Kept so a caller can name it: the server warns at
+   * startup when the store holds no tokens, and the fix — mint one — only works if it is
+   * aimed at the same database the server read, which is the one thing the warning must
+   * not get wrong.
+   */
+  readonly path: string;
   readonly #db: Database.Database;
   readonly #create: Database.Statement<[name: string, hash: string, createdAt: number]>;
   readonly #find: Database.Statement<[hash: string]>;
@@ -106,6 +113,7 @@ export class TokenStore {
    * given no token store of its own authorizes nothing.
    */
   constructor(path: string = IN_MEMORY) {
+    this.path = path;
     this.#db = openDatabase(path);
     this.#db.exec(SCHEMA);
 

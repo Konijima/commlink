@@ -10,6 +10,7 @@
 
 import { parseDbPath } from '../dbpath.js';
 import { loadEnvFile } from '../env.js';
+import { TokenStore } from '../tokens.js';
 
 /** Refuses, and never returns. */
 export type Fail = (message: string) => never;
@@ -78,5 +79,28 @@ export function resolveDbPath(fail: Fail, env: NodeJS.ProcessEnv = process.env):
     return parseDbPath(env.DB_PATH);
   } catch (error) {
     return fail((error as Error).message);
+  }
+}
+
+/**
+ * The token store at `dbPath`, or a refusal in the command's own voice.
+ *
+ * Opening is the step most likely to fail on a real deployment, and it fails for a reason
+ * the operator can act on: the directory `DB_PATH` names does not exist. SQLite will not
+ * create a missing parent, and a unit that keeps its database in a `StateDirectory=` gets
+ * that directory created at the server's *first start* — so a token minted before the
+ * server has ever run has nowhere to be written. Left to throw, that arrives as an uncaught
+ * error and a stack trace that names neither `DB_PATH` nor the command; caught here, it
+ * names both, and the setting the operator has to fix.
+ */
+export function openTokenStore(fail: Fail, dbPath: string): TokenStore {
+  try {
+    return new TokenStore(dbPath);
+  } catch (error) {
+    return fail(
+      `cannot open the database at ${dbPath}: ${(error as Error).message}. Check DB_PATH; ` +
+        `its directory must already exist, and a server that keeps its database in a ` +
+        `systemd StateDirectory only creates that directory at its first start.`,
+    );
   }
 }

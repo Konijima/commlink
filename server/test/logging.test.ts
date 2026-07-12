@@ -1,7 +1,11 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
-import { NO_TOKENS_WARNING, buildApp } from '../src/app.js';
+import { buildApp, noTokensWarning } from '../src/app.js';
 import { Broker } from '../src/broker.js';
+import { DEFAULT_DB_PATH } from '../src/dbpath.js';
 import {
   DEFAULT_LOG_LEVEL,
   LOG_LEVELS,
@@ -62,13 +66,40 @@ describe('redactAuthInUrl', () => {
   });
 });
 
+describe('noTokensWarning', () => {
+  it('mints against the database it names, not the command default', () => {
+    const warning = noTokensWarning('/var/lib/commlink/commlink.sqlite');
+
+    // The command an operator copies out of the log has to reach the database the server
+    // read. A service unit's Environment=DB_PATH is not in the shell they run it from, so
+    // the path is named inline rather than left to the command's own resolution.
+    expect(warning).toContain(
+      'DB_PATH=/var/lib/commlink/commlink.sqlite pnpm token:create <name>',
+    );
+    // And it says why, naming where a bare command would have minted instead.
+    expect(warning).toContain(DEFAULT_DB_PATH);
+    expect(warning).toContain('401');
+  });
+
+  it('names the database it was given, and no other', () => {
+    expect(noTokensWarning('/srv/one.sqlite')).toContain('/srv/one.sqlite');
+    expect(noTokensWarning('/srv/two.sqlite')).not.toContain('/srv/one.sqlite');
+  });
+});
+
 describe('request logging', () => {
   let app: FastifyInstance;
   let tokens: TokenStore;
+  /** Set by the one test that needs the token store on a real file rather than in memory. */
+  let directory: string | undefined;
 
   afterEach(async () => {
     await app.close();
     tokens.close();
+    if (directory !== undefined) {
+      await rm(directory, { recursive: true, force: true });
+      directory = undefined;
+    }
   });
 
   /** A pino destination that keeps every line it is written, so the test can read them back. */
@@ -112,13 +143,21 @@ describe('request logging', () => {
   it('warns at startup when the token store authorizes nobody', async () => {
     const { lines, stream } = capturingStream();
     // A store with no tokens refuses every publish and subscribe with a 401, which looks
-    // from the outside like a broken server. The warning names the cause and the fix.
-    tokens = new TokenStore();
+    // from the outside like a broken server. The warning names the cause and the fix —
+    // and the fix has to name the database the server actually read, which is the whole
+    // reason the store is opened on a file here rather than in memory: an operator whose
+    // DB_PATH comes from a service unit does not have it in the shell they will run the
+    // token command in, so a warning that named the bare command would send them to mint
+    // into the checkout, where this server never looks.
+    directory = await mkdtemp(join(tmpdir(), 'commlink-logging-'));
+    const dbPath = join(directory, 'commlink.sqlite');
+    tokens = new TokenStore(dbPath);
     app = buildApp({ tokens, logger: buildLoggerOptions('info', stream) });
     await app.ready();
 
     const output = lines.join('');
-    expect(output).toContain(NO_TOKENS_WARNING);
+    expect(output).toContain(noTokensWarning(dbPath));
+    expect(output).toContain(`DB_PATH=${dbPath} pnpm token:create`);
     expect(output).toContain('"level":40'); // pino's numeric code for warn
   });
 
@@ -129,7 +168,7 @@ describe('request logging', () => {
     app = buildApp({ tokens, logger: buildLoggerOptions('info', stream) });
     await app.ready();
 
-    expect(lines.join('')).not.toContain(NO_TOKENS_WARNING);
+    expect(lines.join('')).not.toContain('no tokens exist');
   });
 
   it('logs the forwarded Host but not the forwarded client address', async () => {

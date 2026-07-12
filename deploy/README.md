@@ -97,12 +97,32 @@ is left off entirely: it breaks the JIT the Node runtime depends on.
 ## Tokens
 
 A freshly deployed server authorizes nobody: every route but `/healthz` needs a bearer
-token, and the database starts with none. Mint one against the same `DB_PATH` the unit
-uses, before or after the first start:
+token, and the database starts with none. It says so in its log at startup, and refuses
+every publish and subscribe with `401` until you mint one.
+
+**Start the service first, then mint.** `StateDirectory=commlink` creates the state
+directory the unit's `DB_PATH` points into, and it does that when the service first runs —
+so a token minted before the first start has nowhere to go. SQLite will not create a missing
+parent directory, and the command says so rather than leaving you to guess:
+
+```
+token:create: cannot open the database at /var/lib/commlink/commlink.sqlite: Cannot open
+database because the directory does not exist. Check DB_PATH; …
+```
+
+Once the service has started, mint against the same `DB_PATH` the unit uses:
 
 ```bash
 DB_PATH=/path/to/state/commlink.sqlite node dist/cli/token-create.js pixel
 ```
+
+**Name `DB_PATH` on the command, every time.** The unit sets it with `Environment=`, which
+puts it in the *service's* environment and nowhere else, so it is not in the shell you run
+the token command from. The command resolves its own `DB_PATH` — from a `.env` in its
+working directory, then the variable — and falls back to `./commlink.sqlite`, so a bare
+`pnpm token:create` mints into the checkout instead: a token that works nowhere, against a
+server that still authorizes nobody. The startup warning prints the whole command with the
+server's own path already in it; copy that.
 
 The token is printed once. Keep it out of shell history and version control — the
 server stores only its hash and cannot recover it.

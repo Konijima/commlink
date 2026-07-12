@@ -157,6 +157,34 @@ describe('the token commands', () => {
     });
   });
 
+  describe('every token command', () => {
+    it.each(['create', 'list', 'revoke'])(
+      'refuses a DB_PATH whose directory does not exist, naming the setting (%s)',
+      async (command) => {
+        // The deploy unit keeps the database in a systemd StateDirectory, which is created
+        // at the server's *first start* — so an operator who mints before ever starting the
+        // server points DB_PATH into a directory that is not there yet. SQLite will not
+        // create a missing parent, and the store is opened before the command's own `try`,
+        // so this used to surface as an uncaught error: a stack trace naming neither the
+        // command nor DB_PATH, for a mistake that is entirely about DB_PATH.
+        const missing = join(directory, 'not-yet', 'commlink.sqlite');
+        const outcome = await run(
+          { ...process.env, DB_PATH: missing },
+          command,
+          command === 'list' ? [] : ['pixel'],
+        );
+
+        expect(outcome.status).toBe(1);
+        expect(outcome.stderr).toContain(`token:${command}: cannot open the database`);
+        expect(outcome.stderr).toContain(missing);
+        expect(outcome.stderr).toContain('DB_PATH');
+        // In the command's voice, not the runtime's.
+        expect(outcome.stderr).not.toContain('at new Database');
+        expect(outcome.stdout).toBe('');
+      },
+    );
+  });
+
   describe('token:list', () => {
     it('says so when there is nothing to list', async () => {
       const listed = await token('list');
@@ -164,6 +192,9 @@ describe('the token commands', () => {
       expect(listed.status).toBe(0);
       expect(listed.stdout).toBe('');
       expect(listed.stderr).toContain('No tokens');
+      // The suggested command carries the path, so it mints into the database that was
+      // just found empty rather than into whatever token:create resolves on its own.
+      expect(listed.stderr).toContain(`DB_PATH=${dbPath} token:create <name>`);
     });
 
     it('prints one token per line, oldest first', async () => {
