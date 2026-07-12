@@ -14,14 +14,13 @@
  * Revoking a name that was never minted is an error, not a no-op — a mistyped name
  * would otherwise look exactly like a token successfully revoked.
  */
-import { TokenStore } from '../tokens.js';
-import { failWith, oneName, resolveDbPath } from './common.js';
+import { failWith, oneName, openTokenStore, resolveDbPath } from './common.js';
 
 const fail = failWith('token:revoke');
 const name = oneName(fail, 'usage: token:revoke <name>');
 const dbPath = resolveDbPath(fail);
 
-const tokens = new TokenStore(dbPath);
+const tokens = openTokenStore(fail, dbPath);
 let revoked: boolean;
 try {
   revoked = tokens.revoke(name);

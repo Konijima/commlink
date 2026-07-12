@@ -10,8 +10,7 @@
  * No token and no hash is shown, because neither is stored in a form that could be:
  * a token is recoverable only from whoever it was given to.
  */
-import { TokenStore } from '../tokens.js';
-import { type Fail, failWith, resolveDbPath } from './common.js';
+import { type Fail, failWith, openTokenStore, resolveDbPath } from './common.js';
 
 const fail: Fail = failWith('token:list');
 
@@ -24,14 +23,18 @@ function minted(unixSeconds: number): string {
   return new Date(unixSeconds * 1000).toISOString().replace('.000Z', 'Z');
 }
 
-const tokens = new TokenStore(dbPath);
+const tokens = openTokenStore(fail, dbPath);
 try {
   const issued = tokens.list();
 
   // A fresh install authorizes nobody, which looks exactly like this. Say so, rather
-  // than let an empty stdout read as a command that did not run.
+  // than let an empty stdout read as a command that did not run. The suggestion carries
+  // the path, so it mints into the database this command just read rather than into
+  // whatever `token:create` would resolve on its own.
   if (issued.length === 0) {
-    console.error(`No tokens in ${dbPath}. Mint one with: token:create <name>`);
+    console.error(
+      `No tokens in ${dbPath}. Mint one with: DB_PATH=${dbPath} token:create <name>`,
+    );
   } else {
     console.error(`${issued.length} token(s) in ${dbPath}:`);
     console.error('ID\tNAME\tMINTED');

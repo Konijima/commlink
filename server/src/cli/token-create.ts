@@ -7,16 +7,16 @@
  * a lost token is replaced rather than recovered. Everything else this prints goes to
  * stderr, which is what makes `TOKEN=$(pnpm --silent token:create pixel)` work.
  */
-import { TokenStore } from '../tokens.js';
-import { failWith, oneName, resolveDbPath } from './common.js';
+import { failWith, oneName, openTokenStore, resolveDbPath } from './common.js';
 
 const fail = failWith('token:create');
 const name = oneName(fail, 'usage: token:create <name>');
 const dbPath = resolveDbPath(fail);
 
-// Creates the database if this runs before the server's first start, which is the
-// order an operator setting up a fresh install would naturally take.
-const tokens = new TokenStore(dbPath);
+// Creates the database if this runs before the server's first start — but only where the
+// directory holding it already exists, which under a unit that keeps the database in a
+// StateDirectory it does not until the server has run once. `openTokenStore` says so.
+const tokens = openTokenStore(fail, dbPath);
 let failure: string | undefined;
 try {
   const token = tokens.create(name);

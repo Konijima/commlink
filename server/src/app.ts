@@ -6,6 +6,7 @@ import Fastify, {
 } from 'fastify';
 import { registerAuth } from './auth.js';
 import { Broker } from './broker.js';
+import { DEFAULT_DB_PATH } from './dbpath.js';
 import {
   BODY_ENCODING_RULE,
   EMPTY_MESSAGE_RULE,
@@ -41,12 +42,34 @@ const BODY_ENCODING_CODE = 'COMMLINK_ERR_BODY_ENCODING';
  * What the server logs at startup when its token store holds no tokens. A store with none
  * authorizes nobody — `/healthz` answers, every publish and subscribe is refused with a
  * `401` — which is the safe way to boot but looks, from the outside, exactly like a broken
- * server. An operator who followed the README but has not yet run `pnpm token:create` sees
- * only 401s with no hint why; this names the cause and the fix in the same structured log
- * everything else rides, so the reason is one line away rather than a debugging session.
+ * server. An operator who has not yet minted a token sees only 401s with no hint why; this
+ * names the cause and the fix in the same structured log everything else rides, so the
+ * reason is one line away rather than a debugging session.
+ *
+ * The fix has to work where the operator will run it, which is why the warning names the
+ * database rather than the bare command. A server started by a service manager takes its
+ * `DB_PATH` from the unit, where `Environment=DB_PATH=…` exists in the *service's*
+ * environment and nowhere else; the token commands resolve `DB_PATH` from their own — a
+ * `.env` in their working directory, then the variable itself — and fall back to
+ * {@link DEFAULT_DB_PATH}. So a bare `pnpm token:create` run from the operator's shell
+ * mints into the checkout while the server goes on refusing every request: a server that
+ * authorizes nobody, holding a token that works nowhere, which is the outcome the blank and
+ * `:memory:` `DB_PATH` refusals already exist to prevent. Setting `DB_PATH` inline is right
+ * wherever the command is run.
+ *
+ * `dbPath` is the store's own {@link TokenStore.path}, so the warning cannot name a database
+ * other than the one that was found empty — and on any server an operator runs it is a real
+ * file, since a whole-server `:memory:` is refused at boot (`parseDbPath`).
  */
-export const NO_TOKENS_WARNING =
-  'no tokens exist: every publish and subscribe will be refused with 401 until one is created with `pnpm token:create <name>`';
+export function noTokensWarning(dbPath: string): string {
+  return (
+    `no tokens exist in ${dbPath}: every publish and subscribe will be refused with 401 until ` +
+    `one is minted against that database — \`DB_PATH=${dbPath} pnpm token:create <name>\`. Name ` +
+    `the path: the token command reads DB_PATH from its own environment, and a service unit's ` +
+    `Environment=DB_PATH lives only in the service's, so a bare \`pnpm token:create\` mints into ` +
+    `${DEFAULT_DB_PATH}, which this server never reads.`
+  );
+}
 
 export interface AppOptions {
   /** Injectable so tests can watch the fan-out the routes share. */
@@ -193,11 +216,12 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     app.addHook('onClose', async () => tokens.close());
   }
 
-  // Warn once at build time if the store authorizes nobody. This is silent under the
-  // default `logger: false`, so the test suite's throwaway in-memory stores stay quiet;
-  // the entrypoint's real logger is where an operator running a fresh install sees it.
+  // Warn once at build time if the store authorizes nobody, naming the database it found
+  // empty so the fix it prints mints into that one. This is silent under the default
+  // `logger: false`, so the test suite's throwaway in-memory stores stay quiet; the
+  // entrypoint's real logger is where an operator running a fresh install sees it.
   if (tokens.count() === 0) {
-    app.log.warn(NO_TOKENS_WARNING);
+    app.log.warn(noTokensWarning(tokens.path));
   }
 
   // Before any route handler: a request that cannot authenticate reaches neither a

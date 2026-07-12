@@ -124,7 +124,7 @@ that happens to open with `User=…` is not mistaken for a directive. Mutation-c
 `WorkingDirectory=%h/commlink/server` fails two of the three, and putting `%h` back in the
 commented `EnvironmentFile` alone fails the first.
 
-### 24 — a token minted with the command the server's own warning names lands in the wrong database, under the deploy guide's unit   [open]   severity: medium
+### 24 — a token minted with the command the server's own warning names lands in the wrong database, under the deploy guide's unit   [fixed]   severity: medium
 Repro: deploy with the shipped unit, which sets `DB_PATH` through `Environment=`. Every
 request is refused with `401`, so read the log, find the startup warning, and run exactly
 the command it names:
@@ -146,6 +146,42 @@ Related, same file: the guide says a token may be minted "before or after the fi
 but the unit's `StateDirectory=` only creates the state directory *at* first start, and SQLite
 will not create a missing parent — so minting first fails with a raw "directory does not exist"
 error that names no setting.
+
+Fixed by having the warning name the database it found empty, and mint against it by name.
+The token store now knows the path it opened (`TokenStore.path`), so `noTokensWarning`
+(`server/src/app.ts`) is built from the store the server actually read and cannot name another:
+
+```
+no tokens exist in /var/lib/commlink/commlink.sqlite: every publish and subscribe will be
+refused with 401 until one is minted against that database — `DB_PATH=/var/lib/commlink/
+commlink.sqlite pnpm token:create <name>`. Name the path: the token command reads DB_PATH from
+its own environment, and a service unit's Environment=DB_PATH lives only in the service's, so a
+bare `pnpm token:create` mints into ./commlink.sqlite, which this server never reads.
+```
+
+Setting `DB_PATH` inline is right wherever the command is run, so the line an operator copies
+out of the log works in the shell they are staring at the `401` from. `deploy/README.md` states
+the same rule rather than leaving it to the example, and `token:list` now suggests
+`DB_PATH=<path> token:create <name>` rather than the bare command, for the same reason: a
+listing that reports "no tokens in *this* database" should offer to mint into that one.
+
+The related half is fixed where it actually bites. All three token commands opened the store
+outside their own `try`, so a `DB_PATH` whose directory does not exist — which under the unit is
+every path before the first start, since `StateDirectory=` creates it *at* first start — threw an
+uncaught error and a stack trace naming neither the command nor the setting. They now open through
+`openTokenStore` (`server/src/cli/common.ts`), which refuses in the command's own voice, names the
+path, and says which setting to fix and why the directory may not be there yet. The deploy guide no
+longer says a token may be minted "before or after the first start": start the service, then mint.
+
+Pinned by `test/cli.test.ts` (each of the three commands refuses a `DB_PATH` in a missing directory
+with `token:<cmd>: cannot open the database …`, exit `1`, no stack trace, nothing on stdout; and
+`token:list`'s empty listing carries the path in its suggestion) and `test/logging.test.ts` (the
+startup warning names the store's own file and the `DB_PATH=… pnpm token:create` form). Verified
+against the compiled server: minting before the first start is refused naming `DB_PATH`; the
+warning the running server logs names its own database; the command it prints mints a token that
+server accepts (`200`); and a bare `pnpm token:create` in a shell without `DB_PATH` lands in
+`./commlink.sqlite` and is refused `401` — the trap, still there, now the one thing the warning
+tells you not to do.
 
 ### 23 — the `/json` docs promise a `400` for an over-long topic list, which is a `414`   [open]   severity: low
 Repro: subscribe to a topic segment longer than the router's limit (about 3.2 KB).
