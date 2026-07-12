@@ -294,7 +294,18 @@ next thing to build** — the server it talks to is done and running.
       reconnect immediately on network-change callbacks. Until this lands a dropped connection
       stays dropped: the service says so in its notification and waits to be started again.
 - [ ] On reconnect, request replay with `?since=<last_seen_timestamp>` so nothing is lost.
-- [ ] Send pong responses; force-reconnect if no server ping arrives for 90s.
+- [x] Notice a connection that died quietly, instead of showing "Connected" forever
+      (`BUGS.md#32`). Half a keepalive was in place: the server pings every 45s and OkHttp answers
+      from its reader thread, which keeps a *live* connection from being dropped at the far end.
+      But answering a ping that never arrives detects nothing, and the app sent none of its own —
+      so a half-open socket (the phone moving from Wi-Fi to mobile data, or a NAT forgetting the
+      flow while it sleeps) left the reader blocked forever on a peer that was gone, with the
+      notification still saying "Connected" and no message ever arriving. The client now pings on
+      the server's own 45s cadence, so an unanswered ping fails the socket within 90 seconds and
+      the app reports the drop. A live connection is never cut for being idle, which a subscribe
+      socket normally is. What a detected drop then *does* is the reconnect item above; until that
+      lands the app stays dropped — but it says so, which is the difference between a limitation
+      and a lie.
 - [ ] Boot receiver restarts the service after reboot (`RECEIVE_BOOT_COMPLETED`).
 - [ ] First-launch prompt to exempt the app from battery optimization, with an
       explanation screen.
