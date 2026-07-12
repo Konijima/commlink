@@ -13,6 +13,100 @@ Notes: <cause, workaround, or fix once known>
 
 ---
 
+### 32 — the app never notices a connection that died quietly, and says it is connected   [open]   severity: medium
+Repro: subscribe, then take the network away in a way that sends nothing back — move from Wi-Fi
+to mobile data, or let a NAT forget the flow while the phone sleeps. The socket is half-open: the
+app's end is up, the server's end is gone, and nothing crosses the wire to say so.
+
+```
+notification: "Connected — alerts"      <- the app, indefinitely
+publish to alerts                        -> the notification never arrives
+```
+
+Notes: the client sets no `pingInterval` on its OkHttp client (`SubscriberClient.kt`), so the app
+never sends a ping of its own. The server pings every 45s and OkHttp answers from its reader
+thread — which keeps a *live* connection alive, and is what the client's comment says — but
+answering a ping that never arrives detects nothing. With no write on the socket, a dead peer
+produces no error: the reader blocks forever, no disconnect is ever reported, and the service
+goes on showing "Connected" while delivering nothing.
+
+This is not the same as the known "does not reconnect yet" limitation, which is honest about a
+connection it *knows* is down. Here the app does not know. A `pingInterval` makes the socket fail
+when a pong does not come back, which at minimum makes the notification tell the truth — and gives
+the reconnect work the roadmap already carries something to trigger on.
+
+### 31 — starting the service again while it is connected sticks the notification on "Connecting…"   [open]   severity: medium
+Repro: launch the app twice with the same subscription while the service is already connected and
+holding it — a second launch of a configured debug build does exactly this.
+
+```
+notification: "Connecting…"    <- and it stays there, though the connection is up and delivering
+```
+
+Notes: `onStartCommand` (`SubscriberService.kt`) posts the `CONNECTING` notification unconditionally
+on every start, but the reconnect below it is guarded — a start carrying a subscription the service
+already holds does not reconnect, and rightly so. So no new connection is opened, no `Connected`
+event is ever emitted, and nothing ever repaints the notification the start just overwrote. The
+socket is fine and messages still arrive; the app's only status display is simply lying about it.
+
+The fix is to hold the current state rather than infer it: post `CONNECTING` when about to connect,
+and otherwise re-post the state already held.
+
+### 30 — nothing pins that two different messages get two different notifications   [open]   severity: medium
+Repro: none — the shipped behaviour is correct. This is a hole in the suite, not in the app.
+
+Notes: `messageNotificationId` (`Notifications.kt`) derives a notification's id from the message's
+own, so a message delivered twice updates its notification instead of stacking a second copy. The
+test that covers this pins only that half. Replacing the whole derivation with a **constant** — which
+would collapse every message into one notification, so a user only ever sees the most recent one, and
+each new message silently destroys the last — leaves the entire suite green. (A *random* id per post
+does fail it, so "same message, one notification" is pinned; "different messages, different
+notifications" is not, and that is the far worse way to break it.)
+
+Same shape as the mutation gaps the server suite closed: a test whose green run does not mean the
+behaviour it names is intact. It wants a case that delivers two messages with different ids and
+asserts two notifications.
+
+### 29 — the test suite goes red at random, on changes that touch nothing it tests   [fixed]   severity: high
+Repro: run the full server suite on a busy machine. It fails perhaps one run in several, in a
+different test each time — always one that runs the server or a token command as its own process.
+
+```
+ ✓ test/cli.test.ts > token:list > prints one token per line, oldest first   (passes alone, 4423ms)
+ ...
+ Test Files  1 failed | 33 passed (34)
+      Tests  1 failed | 569 passed (570)
+```
+
+Notes: three suites — `cli`, `startup` and `shutdown` — run the thing they test as a real process,
+the way an operator does. That means spawning Node, which loads `tsx` and compiles the TypeScript
+entrypoint before a line of the code under test runs: seconds of work on an idle machine. `shutdown`
+knew this and gave its two process tests 20s. `cli` and `startup` never got one, so all 52 of their
+tests rode vitest's 5s default — a budget meant for work done *in* the test process.
+
+Measured under a full run, with the timeout lifted so nothing died: the slowest `cli` test takes
+**8168ms** (2014ms alone), and **six** `startup` tests pass 5000ms, peaking at 6285ms — with a dozen
+more sitting just the wrong side of 3s. So the suite was not one bad test but a coin flip across
+fifty-odd, and which one lost depended on how the scheduler happened to interleave 34 files. That is
+why it failed on a change that touched none of them.
+
+**A red run cannot be told apart from a real regression, so this outranks new work** — the same
+reason #4 did.
+
+Fixed by giving the tests that spawn a process a timeout that fits what they do, rather than the one
+the in-process tests need. `SUBPROCESS_TIMEOUT_MS` (`test/helpers.ts`) is 30s — ~3.7x the slowest
+measured run, and still a bound: a command that genuinely hangs still fails, it just takes 30s to say
+so instead of failing a command that was merely slow. Every test in `cli` and `startup` spawns, so
+those two take it for the whole file; `shutdown` mixes process tests with in-process ones, so only
+its two process tests take it — replacing the hand-written `20_000`s they already carried, which is
+where the reason now lives once instead of three times. Everything else keeps the strict 5s default,
+where a 5s hang really is a bug.
+
+Mutation-checked, since a green suite was the symptom: setting the constant to `1` fails **54 of the
+60** tests in those three files and passes exactly **6** — which are precisely the in-process
+`installShutdownHandlers` cases that the constant deliberately does not cover. So the timeout is
+provably in force, and provably scoped to the tests that spawn.
+
 ### 28 — the routes that accept `?auth=` are named twice, and the second list can go stale   [fixed]   severity: low
 Repro: none today — it is a latent break, not a live one. Rename a subscribe route, or add a
 third, and `?auth=` silently stops working on it while the header keeps working:

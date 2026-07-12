@@ -15,7 +15,9 @@ Services, Firebase, or FCM.
   the app wants one of per priority. Compiled and targeted against SDK 35.
 - **UI:** Jetpack Compose (dark theme)
 - **Networking:** OkHttp (WebSocket)
-- **Persistence:** Room — not wired up yet
+- **Persistence:** the subscription (server, token, topics) in shared preferences, so the
+  service can read it back when the system restarts it. Messages are not stored yet; when
+  they are, it will be in Room.
 - **No** proprietary dependencies: nothing from Play Services, so the app runs on an AOSP
   build.
 

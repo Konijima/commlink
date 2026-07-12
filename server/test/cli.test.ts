@@ -5,9 +5,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DB_PATH_RULE } from '../src/dbpath.js';
 import { TOKEN_NAME_RULE, TokenStore, hashToken } from '../src/tokens.js';
+import { SUBPROCESS_TIMEOUT_MS } from './helpers.js';
+
+// Every test in this file runs a token command as its own process, so they all need the
+// budget a spawn takes rather than the one in-process work does.
+vi.setConfig({ testTimeout: SUBPROCESS_TIMEOUT_MS });
 
 const execFileAsync = promisify(execFile);
 
