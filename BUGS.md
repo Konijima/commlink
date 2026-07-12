@@ -13,7 +13,7 @@ Notes: <cause, workaround, or fix once known>
 
 ---
 
-### 28 — the routes that accept `?auth=` are named twice, and the second list can go stale   [open]   severity: low
+### 28 — the routes that accept `?auth=` are named twice, and the second list can go stale   [fixed]   severity: low
 Repro: none today — it is a latent break, not a live one. Rename a subscribe route, or add a
 third, and `?auth=` silently stops working on it while the header keeps working:
 
@@ -39,6 +39,35 @@ It fails closed, which is why it is low and not high: a route this list has lost
 the query token and answers `401`, so a stale copy costs a browser subscriber its only
 credential — it never hands one out. No behaviour is wrong today; both paths are correct and
 pinned by `test/auth.test.ts`.
+
+Fixed by deleting the second copy rather than trying to keep it in step. A route now declares the
+credential it takes, in its own `config`, in the same breath as its path: `ACCEPTS_QUERY_TOKEN`
+(`server/src/auth.ts`) is spread into the two subscribe routes where they are registered
+(`server/src/subscribe.ts`, `server/src/stream.ts` — the `GET` and the `HEAD` alike), and
+`presentedToken` reads the marker off the route the request matched instead of matching its path
+against a list. The auth rule is therefore a *view* of the route table, not a copy: rename a
+subscribe route and `?auth=` moves with it, because the marker is part of the thing that moved.
+
+The same treatment removes the other copy in that file, which had the same shape and the same
+latent break: `PUBLIC_ROUTES` named `/healthz` as a string, so renaming the health route would
+have quietly made it require a token. It is now marked `PUBLIC_ROUTE` where it is registered
+(`server/src/app.ts`). Both fail closed, as before — an unmarked route refuses the query token and
+answers `401`, and an unmarked route is not public — so a marker left off is a route that asks for
+more credentials than it needs, never fewer. An unmatched path matches no route, wears no marker,
+and so still reads no token from the query string, which is the tightening #27 came with.
+
+Pinned by `test/authmarkers.test.ts`, which mounts routes at paths the server does not serve —
+`/elsewhere/socket`, `/elsewhere/plain`, `/elsewhere/open` — so a rule keyed on `/:topic/ws` or
+`/:topic/json` could not satisfy any of them. A marked route authenticates by `?auth=` on a `GET`
+and on a `HEAD` of the same URL and still by header; an unmarked one refuses `?auth=` and answers
+`401` while the header still opens it; a `PUBLIC_ROUTE` is served with no token; and an unmatched
+path reads no query token. Mutation-checked both halves: putting the hard-coded `QUERY_TOKEN_ROUTES`
+set back fails the two cases that assert the credential follows the route, and putting `PUBLIC_ROUTES`
+back fails the public-route case. The 562 tests that pinned the old behaviour are unchanged and green.
+Verified against the compiled server: `/healthz` still answers with no token, `HEAD /mytopic/json?auth=`
+is `200`, `POST /mytopic?auth=` is still `401` while the header publishes, `GET /no-such-path?auth=`
+is still `401` while an authenticated one is the `404`, and `?auth=` still opens a real WebSocket
+subscription that receives a published message.
 
 ### 27 — `?auth=` authenticates a `GET` on the `/json` stream but not a `HEAD` of it   [fixed]   severity: low
 Repro: mint a token, then ask for the stream's headers with the token in the query — the

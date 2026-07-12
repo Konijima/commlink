@@ -4,7 +4,7 @@ import Fastify, {
   type FastifyInstance,
   type FastifyServerOptions,
 } from 'fastify';
-import { registerAuth } from './auth.js';
+import { PUBLIC_ROUTE, registerAuth } from './auth.js';
 import { Broker } from './broker.js';
 import { DEFAULT_DB_PATH } from './dbpath.js';
 import {
@@ -257,8 +257,10 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     }
   });
 
-  // Liveness probe: 200 with the process uptime in seconds.
-  app.get('/healthz', async () => {
+  // Liveness probe: 200 with the process uptime in seconds. The one route that carries
+  // no token, marked as such on the route itself so the auth hook reads the rule where
+  // the path is declared rather than from a copy of it.
+  app.get('/healthz', { config: PUBLIC_ROUTE }, async () => {
     return { status: 'ok', uptime: process.uptime() };
   });
 

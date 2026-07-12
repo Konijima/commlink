@@ -150,6 +150,16 @@ bug in the server still outranks everything; a further docs nit does not.
       guarantee nothing here needs. The deliberate choice is documented at the limiter and
       pinned by a test, so persisting or sharing the budget later has to be a conscious
       change rather than a silent regression.
+- [x] Derive the routes that accept `?auth=` from the routes themselves (`BUGS.md#28`), rather
+      than repeating their paths in a second list that can go stale. A route now declares the
+      credential it takes in its own config, beside its path: the two subscribe routes are marked
+      `ACCEPTS_QUERY_TOKEN` where they are registered, and the auth hook reads that marker off the
+      route the request matched instead of comparing its path against a hand-kept list. So the
+      rule is a view of the route table rather than a copy of it, and renaming a subscribe route
+      carries `?auth=` along with it. The health probe's exemption was the same latent break — a
+      second place naming `/healthz` as a string — and is now marked `PUBLIC_ROUTE` the same way.
+      Both fail closed: an unmarked route refuses the query token and is not public, so a marker
+      left off asks for more credentials, never fewer.
 
 ### Ops
 - [x] Graceful shutdown on `SIGTERM`/`SIGINT`: stop accepting, end the open subscriber
@@ -228,10 +238,6 @@ Open, not dropped. Neither blocks the Android client, and both are cheap to pick
       filesystem isolation documented and commented for hosts that support it. *Deferred:
       needs a host with systemd to confirm against — it cannot be checked from the test
       suite, so it waits for a machine rather than for a change.*
-- [ ] Derive the routes that accept `?auth=` from the routes themselves (`BUGS.md#28`),
-      rather than repeating their paths in a second list that can go stale. *Deferred: it
-      fails closed and no route path is changing right now, so it is a hardening of the fix
-      for `BUGS.md#27`, not a live bug.*
 
 ## Android app (v0.2)
 

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
+import { ACCEPTS_QUERY_TOKEN } from './auth.js';
 import { MAX_BUFFERED_BYTES } from './backpressure.js';
 import type { Broker } from './broker.js';
 import { KEEPALIVE_INTERVAL_MS, everyInterval } from './keepalive.js';
@@ -84,6 +85,10 @@ export function registerSubscribeRoute(
   app.route<{ Params: { topic: string }; Querystring: { since?: string } }>({
     method: 'GET',
     url: '/:topic/ws',
+    // A browser cannot set a header on a WebSocket handshake, so this route takes the
+    // token in the query string too. The marker is declared here, beside the path, so it
+    // cannot be left behind if the path ever moves.
+    config: ACCEPTS_QUERY_TOKEN,
     // A GET that never upgraded — a browser opening the URL, or a reverse proxy that
     // dropped the `Upgrade` header (see deploy/README.md). The route matched, so the
     // not-found handler never runs, and `@fastify/websocket` would otherwise answer a

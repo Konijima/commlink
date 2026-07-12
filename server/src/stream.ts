@@ -1,5 +1,6 @@
 import type { ServerResponse } from 'node:http';
 import type { FastifyInstance } from 'fastify';
+import { ACCEPTS_QUERY_TOKEN } from './auth.js';
 import { MAX_BUFFERED_BYTES } from './backpressure.js';
 import type { Broker } from './broker.js';
 import { KEEPALIVE_INTERVAL_MS, everyInterval } from './keepalive.js';
@@ -117,6 +118,7 @@ export function registerStreamRoute(
   // does — end. Nothing is subscribed, because nothing can be delivered.
   app.head<{ Params: { topic: string }; Querystring: { since?: string } }>(
     '/:topic/json',
+    { config: ACCEPTS_QUERY_TOKEN },
     (request, reply) => {
       try {
         parseTopicList(request.params.topic);
@@ -142,6 +144,10 @@ export function registerStreamRoute(
   app.route<{ Params: { topic: string }; Querystring: { since?: string } }>({
     method: 'GET',
     url: '/:topic/json',
+    // A browser cannot set a header on the request it opens a stream with, so this route
+    // takes the token in the query string too. The marker is declared here, beside the
+    // path, so it cannot be left behind if the path ever moves.
+    config: ACCEPTS_QUERY_TOKEN,
     // Do not clone this handler onto `HEAD`: the one above is this route's, written for
     // a request that carries no body. Declaring it first is enough for Fastify to leave
     // the pair alone, but saying so here does not depend on the order the two are read in.
