@@ -4,33 +4,60 @@ The native Android app: a background subscriber that holds a WebSocket to a comm
 server and turns incoming messages into system notifications — with no Google Play
 Services, Firebase, or FCM.
 
-> **Not built yet.** This directory is still a placeholder — but the server it subscribes to
-> is complete, so the app is what comes next rather than what comes later. The first step is
-> the Gradle scaffold; see [`../TODO.md`](../TODO.md).
+> **Early.** The Gradle project builds and its unit tests run, but the app does not
+> subscribe to anything yet: it launches to a placeholder screen. The subscriber service,
+> the notifications and the UI are the next items in [`../TODO.md`](../TODO.md).
 
-## Planned stack
+## Stack
 
 - **Language:** Kotlin
-- **Min SDK:** 26 (Android 8.0); target the latest stable SDK
+- **Min SDK:** 26 (Android 8.0) — the release that introduced notification channels, which
+  the app wants one of per priority. Compiled and targeted against SDK 35.
 - **UI:** Jetpack Compose (dark theme)
-- **Networking:** OkHttp (WebSocket)
-- **Persistence:** Room
-- **No** proprietary dependencies — builds from an AOSP-compatible toolchain.
+- **Networking:** OkHttp (WebSocket) — not wired up yet
+- **Persistence:** Room — not wired up yet
+- **No** proprietary dependencies: nothing from Play Services, so the app runs on an AOSP
+  build.
 
-## Build requirements (for when work starts)
+## Building
 
-- JDK 17
-- Android SDK (command-line tools or Android Studio). The SDK is **not** required to work
-  on the server and will be set up when app development begins.
-- A standard Gradle project; `./gradlew assembleRelease` will produce a signed APK.
+You need a JDK (17 or newer) and an Android SDK with platform 35. Point the build at the
+SDK either by exporting `ANDROID_HOME`, or by writing `local.properties` in this directory:
+
+```properties
+sdk.dir=/path/to/Android/Sdk
+```
+
+`local.properties` is machine-specific and git-ignored. Everything else — including Gradle
+itself — comes from the wrapper, so there is nothing to install globally:
+
+```sh
+./gradlew test           # unit tests, on the JVM: no device or emulator needed
+./gradlew assembleDebug  # app/build/outputs/apk/debug/app-debug.apk
+```
+
+The first run downloads Gradle and the build's dependencies, so give it a few minutes.
+
+## Layout
+
+```
+android/
+├── settings.gradle.kts        # the modules, and the repositories they may resolve from
+├── build.gradle.kts           # the plugins, declared once for every module
+├── gradle/libs.versions.toml  # every dependency version, in one place
+└── app/                       # the application module
+    └── src/
+        ├── main/java/io/github/konijima/commlink/
+        └── test/java/…        # unit tests
+```
 
 ## Application id
 
-The app will use a reverse-DNS application id. Default: `io.github.konijima.commlink`
-(to be confirmed before the first release).
+`io.github.konijima.commlink`.
 
 ## Distribution
 
-Sideload only — no app store. Release builds are signed with a local keystore; signing
-configuration is read from `keystore.properties`, which is git-ignored. Keystore creation
-steps will be documented here once the build is in place.
+Sideload only — no app store. Release builds will be signed with a local keystore; the
+signing configuration is read from `keystore.properties`, which is git-ignored. Keystore
+creation steps will be documented here once release signing is in place —
+`./gradlew assembleRelease` currently produces an unsigned build.

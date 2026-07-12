@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Compose draws the whole UI, so this theme only has to dress the window before
+      the first frame: no action bar, and dark, so the app does not flash white on
+      launch. The colours the UI actually uses live in the Compose theme.
+    -->
+    <style name="Theme.Commlink" parent="@android:style/Theme.Material.NoActionBar" />
+</resources>
