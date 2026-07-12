@@ -13,7 +13,7 @@ Notes: <cause, workaround, or fix once known>
 
 ---
 
-### 32 — the app never notices a connection that died quietly, and says it is connected   [open]   severity: medium
+### 32 — the app never notices a connection that died quietly, and says it is connected   [fixed]   severity: medium
 Repro: subscribe, then take the network away in a way that sends nothing back — move from Wi-Fi
 to mobile data, or let a NAT forget the flow while the phone sleeps. The socket is half-open: the
 app's end is up, the server's end is gone, and nothing crosses the wire to say so.
@@ -34,6 +34,34 @@ This is not the same as the known "does not reconnect yet" limitation, which is 
 connection it *knows* is down. Here the app does not know. A `pingInterval` makes the socket fail
 when a pong does not come back, which at minimum makes the notification tell the truth — and gives
 the reconnect work the roadmap already carries something to trigger on.
+
+Fixed by giving the client a ping of its own. `defaultHttpClient` (`SubscriberClient.kt`) now sets
+`pingInterval` to 45 seconds — the server's own keepalive cadence, so the two ends watch each other
+on the same clock and the radio is already awake for the server's ping when ours falls due. OkHttp
+fails a socket whose ping was not answered by the time the next one falls due, so a dead peer is
+reported within two intervals (90s) rather than never, and a live one is never cut, because
+answering a ping is something every WebSocket peer does for free. The class docstring no longer
+says keepalive "needs no code here": it says which half needs none (answering the server's ping,
+which OkHttp does from its reader thread) and why the other half cannot be skipped (reading alone
+can never notice a peer that sends nothing, including no error — only a write finds out).
+
+The app still does not reconnect — that is the roadmap item above this one — so a detected drop
+still stays dropped. But the notification now says "Disconnected" when it is, which is the whole
+difference between a limitation and a lie, and the `Disconnected` event is what the reconnect work
+will trigger on.
+
+Pinned by `net/HalfOpenSocketTest.kt`. A stub cannot be silent enough to test this — `MockWebServer`'s
+WebSocket is a real one, and a real WebSocket pongs from its reader thread whether it is told to or
+not — so the dead peer is a raw socket that performs the RFC 6455 upgrade by hand and then never
+speaks again, which is exactly what the phone is left holding. The client opens, reports `Connected`,
+and then must find out on its own: the test asserts a `Disconnected` naming the unanswered ping, with
+no close code and no HTTP status (a failure, not a goodbye), while the peer's end is still open. The
+other half of the rule gets its own case, since a ping interval is the kind of fix that can cut what
+it meant to protect: a *live* peer is pinged across six intervals of idleness and still delivers a
+message afterwards — an idle subscribe socket is normal and must not be dropped for being quiet.
+Mutation-checked: removing the `pingInterval` line fails the half-open case with "the client reported
+no event" — which is the bug itself, the app waiting forever — and leaves the live-connection case
+green, so the pin is on the ping and not on the connection.
 
 ### 31 — starting the service again while it is connected sticks the notification on "Connecting…"   [open]   severity: medium
 Repro: launch the app twice with the same subscription while the service is already connected and

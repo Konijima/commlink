@@ -61,9 +61,13 @@ class SubscriberConnection internal constructor(private val socket: WebSocket) {
  * events, and is done when the socket is. Deciding whether and when to open another one is
  * the caller's, which is the service that owns the connection's lifetime.
  *
- * Keepalive needs no code here. The server pings every 45 seconds and drops a subscriber
- * that does not answer; OkHttp replies to a ping with a pong from its own reader thread, so
- * the connection stays alive as long as the socket is readable.
+ * Both halves of the keepalive are needed, and they do different jobs. Answering the
+ * server's ping keeps a *live* connection from being dropped at the far end, and OkHttp does
+ * that from its own reader thread with no code here. Sending a ping of our own is what
+ * notices a connection that died quietly — a socket whose far end is gone but that nothing
+ * has told us about, which is what moving between networks or a NAT forgetting the flow
+ * leaves behind. Reading alone can never notice one: a dead peer sends nothing, including no
+ * error, so the reader waits forever. A write can, and [PING_INTERVAL_MS] is the write.
  */
 class SubscriberClient(private val http: OkHttpClient = defaultHttpClient()) {
 
@@ -131,24 +135,44 @@ class SubscriberClient(private val http: OkHttpClient = defaultHttpClient()) {
         }
     }
 
-    private companion object {
+    companion object {
+
+        /**
+         * How often the client pings the server, and so how long a connection that has died
+         * quietly can go on looking alive.
+         *
+         * OkHttp fails a socket whose ping was not answered by the time the next one falls
+         * due, so a dead peer is reported within twice this interval — 90 seconds — and a
+         * live one is never cut, because answering a ping is something every WebSocket peer
+         * does for free. It mirrors the server's own 45-second keepalive: the two ends watch
+         * each other on the same cadence, and the radio is already awake for the server's
+         * ping when ours falls due.
+         */
+        const val PING_INTERVAL_MS = 45_000L
+
         /**
          * `ws://` and `wss://` are what a subscribe URL is written with; OkHttp asks for the
          * HTTP scheme the handshake actually travels over, and upgrades it itself.
          */
-        fun handshakeUrl(url: String): String = when {
+        private fun handshakeUrl(url: String): String = when {
             url.startsWith("wss://") -> "https://" + url.removePrefix("wss://")
             url.startsWith("ws://") -> "http://" + url.removePrefix("ws://")
             else -> url
         }
 
         /**
-         * A read timeout would cut a healthy connection: a subscribe socket is silent for
-         * as long as nothing is published on its topics, which may be days. Liveness is the
-         * server's ping instead, so the read side waits indefinitely.
+         * The client the app connects with. A read timeout would cut a healthy connection —
+         * a subscribe socket is silent for as long as nothing is published on its topics,
+         * which may be days — so the read side waits indefinitely and liveness is the ping
+         * instead.
+         *
+         * [pingIntervalMs] is a seam for the tests, which cannot wait out the shipped
+         * interval; the app takes the default.
          */
-        fun defaultHttpClient(): OkHttpClient = OkHttpClient.Builder()
-            .readTimeout(0, TimeUnit.MILLISECONDS)
-            .build()
+        fun defaultHttpClient(pingIntervalMs: Long = PING_INTERVAL_MS): OkHttpClient =
+            OkHttpClient.Builder()
+                .readTimeout(0, TimeUnit.MILLISECONDS)
+                .pingInterval(pingIntervalMs, TimeUnit.MILLISECONDS)
+                .build()
     }
 }
