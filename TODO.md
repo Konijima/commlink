@@ -259,10 +259,16 @@ next thing to build** — the server it talks to is done and running.
       at the far end of a socket that closes with a code. Thirteen unit tests cover it, and the
       auth token is deliberately not in that URL: it rides on the handshake as
       `Authorization: Bearer …`, since a query string is what proxies and access logs write down.
-- [ ] Add a CI job that builds the app and runs its unit tests, so the client is covered the
-      way the server is. It gates alongside the existing `verify` job, and checks the Gradle
-      wrapper the repository ships against its published checksum — a wrapper jar is a binary
-      a clone executes, so it should be verified rather than trusted.
+- [x] Add a CI job that builds the app and runs its unit tests, so the client is covered the
+      way the server is. An `android` job runs `./gradlew test` and `./gradlew assembleDebug`
+      on every pull request, and the `verify` gate now requires it as well as the server's
+      matrix — so a broken client fails the same single required check a broken server does,
+      and `verify` keeps its stable name. It first checks the Gradle wrapper the repository
+      ships against Gradle's published checksums: a wrapper jar is a binary that every clone
+      executes — including CI itself, before any of the change is reviewed — so it is verified
+      rather than trusted, and a hand-edited or substituted jar fails the build instead of
+      running with the job's credentials. The build needs no secrets and no emulator; the unit
+      tests run on the JVM.
 
 ### Connection service
 - [ ] `SubscriberService` — a `START_STICKY` foreground service holding one multiplexed
