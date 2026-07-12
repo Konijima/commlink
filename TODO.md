@@ -306,6 +306,17 @@ next thing to build** — the server it talks to is done and running.
       socket normally is. What a detected drop then *does* is the reconnect item above; until that
       lands the app stays dropped — but it says so, which is the difference between a limitation
       and a lie.
+- [x] Report the connection the service is actually holding, not the one a start implies
+      (`BUGS.md#31`). Every start posted "Connecting…", but the reconnect below it is guarded — a
+      start carrying the subscription the service already holds opens nothing, so no `Connected`
+      event followed to repaint the notification the start had just overwritten, and a launch of an
+      already-connected app left its only status display stuck on "Connecting…" over a socket that
+      was up and delivering. The service now holds the connection's state rather than inferring it
+      from what just happened, and decides before posting whether the start is going to connect at
+      all: one that will says "Connecting…", one that will not re-posts the state its connection
+      reached. Two tests pin the halves apart — a second start over a live connection goes on saying
+      "Connected" and opens no second socket, and a start that really does open one still reports
+      the progress — so curing the lie cannot quietly cost the app its progress message.
 - [ ] Boot receiver restarts the service after reboot (`RECEIVE_BOOT_COMPLETED`).
 - [ ] First-launch prompt to exempt the app from battery optimization, with an
       explanation screen.
