@@ -18,6 +18,18 @@ declare module 'fastify' {
  */
 const PUBLIC_ROUTES = new Set(['/healthz']);
 
+/**
+ * The routes that additionally take `?auth=<token>`: the two subscribe routes, whatever
+ * method they are asked with.
+ *
+ * Keyed by route, not by method. The rule is about *where* a token may ride in the URL —
+ * the routes a browser must reach without setting a header — and a route does not change
+ * what it exposes by acquiring a second method. Keying it on `GET` is what went stale when
+ * the stream gained a `HEAD` of its own, which then could not authenticate with the very
+ * credential its `GET` accepts on the same URL.
+ */
+const QUERY_TOKEN_ROUTES = new Set(['/:topic/ws', '/:topic/json']);
+
 /** What the server tells a client that presented no token, or the wrong one. */
 export const AUTH_RULE = 'a valid bearer token is required';
 
@@ -29,14 +41,16 @@ const BEARER_PATTERN = /^Bearer +(\S+)$/i;
 /**
  * The token `request` presents, or `null` if it presents none the server can read.
  *
- * `Authorization: Bearer <token>` works everywhere. Subscribe routes additionally take
- * `?auth=<token>`, because a browser cannot set a header on a WebSocket handshake and
- * would otherwise have no way to authenticate at all. Publishing does not take it: a
+ * `Authorization: Bearer <token>` works everywhere. The subscribe routes additionally
+ * take `?auth=<token>`, because a browser cannot set a header on a WebSocket handshake
+ * and would otherwise have no way to authenticate at all. Publishing does not take it: a
  * query string is the part of a URL that proxies and access logs write down, and a
  * publisher is a program that can always set a header.
  *
- * Subscribing is exactly the set of `GET` routes that need a token, so that is the
- * test — `/healthz` never reaches here.
+ * Which routes those are is {@link QUERY_TOKEN_ROUTES}, so a subscribe route accepts the
+ * query token whatever method it is asked with — a `HEAD` of the stream reads the same
+ * credential its `GET` does, off the same URL, and a route the server does not serve
+ * reads none. `/healthz` never reaches here.
  */
 export function presentedToken(request: FastifyRequest): string | null {
   const header = headerValue(request.headers.authorization);
@@ -48,7 +62,9 @@ export function presentedToken(request: FastifyRequest): string | null {
     return match ? match[1] : null;
   }
 
-  if (request.method === 'GET') {
+  // An unmatched path has no `routeOptions.url`, and so takes no query token: `?auth=`
+  // is a credential on the routes that document it, not everywhere a URL can be typed.
+  if (QUERY_TOKEN_ROUTES.has(request.routeOptions.url ?? '')) {
     const auth = headerValue((request.query as { auth?: string | string[] }).auth);
     if (auth !== undefined && auth.length > 0) return auth;
   }

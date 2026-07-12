@@ -110,6 +110,11 @@ websocat "ws://127.0.0.1:4500/mytopic/ws?auth=$TOKEN"
 Publishing does not take `?auth=`. A query string is the part of a URL that proxies and
 access logs write down, and a publisher is a program that can always set a header.
 
+`?auth=` is a credential of the two subscribe routes, whatever method they are asked with
+— so `HEAD /:topic/json?auth=$TOKEN` authenticates exactly as the `GET` of that URL does.
+It is not a credential anywhere else: on a publish, or on a path the server does not
+serve, the query parameter is ignored and the request is refused for having no token.
+
 A request with no token, an unreadable one, or one that was never issued is answered
 with `401` and a `WWW-Authenticate: Bearer` challenge; the three are not told apart. On
 `/:topic/ws` that `401` refuses the handshake, so no socket is ever opened.
@@ -320,7 +325,10 @@ An invalid or over-long topic list is rejected with `400` before the stream open
 `HEAD /:topic/json` answers with the headers that stream would send, and no body — the
 same `400` for a topic it would refuse. It subscribes to nothing and returns immediately,
 so a probe or a proxy health check can ask whether the route is there without opening a
-subscription it never intends to read.
+subscription it never intends to read. It needs a token like any other subscribe request,
+by either credential: a probe may reuse a subscriber's `?auth=` URL, and one that carries
+no token at all hears `401` rather than an answer about the route, since auth runs before
+routing and only `/healthz` is open.
 
 ### Catching up
 

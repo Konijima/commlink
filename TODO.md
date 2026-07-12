@@ -98,11 +98,17 @@ The self-hostable pub/sub core.
       and refuses an http-only directive inside a `server` or `location` — commented or live,
       since a commented directive is uncommented verbatim — and refuses an `access_log` naming a
       format the file does not define, which is the same dead proxy from the other half alone.
-- [ ] Settle whether `?auth=` authenticates a `HEAD` of the `/json` stream (`BUGS.md#27`). It
-      authenticates a `GET` of the same URL but not a `HEAD`, because the check keys on the
+- [x] Settle whether `?auth=` authenticates a `HEAD` of the `/json` stream (`BUGS.md#27`). It
+      authenticated a `GET` of the same URL but not a `HEAD`, because the check keyed on the
       method under the reasoning that subscribing is exactly the `GET` routes — which stopped
-      being true when the stream gained a `HEAD`. Either accept the query token there (it grants
-      nothing the `GET` does not) or keep it header-only and say so where the docs promise both.
+      being true when the stream gained a `HEAD`. Settled that it does: the rule is now keyed on
+      the **route**, so the two subscribe routes take the query token whatever method they are
+      asked with, which is what the docs already promised ("both subscribe *routes*") and what
+      the method test was always standing in for. It expands nothing — the same token in the same
+      URL already opens the full stream on a `GET`, so a `HEAD` of it grants strictly less — and
+      it cannot go stale again the next time a subscribe route gains a method. Publishing stays
+      header-only. An unmatched path now takes no query token either, since `?auth=` is a
+      credential of the routes that document it, not of any URL a client can type.
 - [x] Replace the `%h` paths in the systemd unit for the system-unit path, and correct the
       guide that says they follow `User=` (`BUGS.md#25`). They follow the service *manager*, so
       a system unit run as a dedicated account looked for the checkout in `/root` and never
