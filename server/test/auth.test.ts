@@ -145,6 +145,64 @@ describe('bearer-token auth', () => {
     });
   });
 
+  // A subscribe route takes the query token whatever method it is asked with. The `HEAD`
+  // is the same route as the `GET` above, on the same URL, so it reads the same credential
+  // — and grants strictly less with it: the stream's headers, no subscription, no body.
+  // Keying the rule on `GET` made this route refuse the one credential a browser-side
+  // client has, on a URL whose `GET` accepts it.
+  describe('HEAD /:topic/json', () => {
+    const head = (url: string, headers: Record<string, string> = {}) =>
+      app.inject({ method: 'HEAD', url, headers });
+
+    it('accepts a valid token as ?auth=, which its own GET accepts on the same URL', async () => {
+      const res = await head(`/mytopic/json?auth=${token}`);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-type']).toBe('application/x-ndjson');
+      // Asking for the headers subscribes to nothing, however it authenticated.
+      expect(broker.listenerCount('mytopic')).toBe(0);
+    });
+
+    it('accepts a valid token in the header', async () => {
+      expect((await head('/mytopic/json', bearer(token))).statusCode).toBe(200);
+    });
+
+    it.each([
+      ['no token', '/mytopic/json', {}],
+      ['an unissued token as ?auth=', `/mytopic/json?auth=${WRONG_TOKEN}`, {}],
+      ['an empty ?auth=', '/mytopic/json?auth=', {}],
+      ['an unissued token in the header', '/mytopic/json', bearer(WRONG_TOKEN)],
+    ])('refuses a HEAD with %s', async (_name, url, headers) => {
+      const res = await head(url, headers as Record<string, string>);
+
+      expect(res.statusCode).toBe(401);
+      expect(broker.listenerCount('mytopic')).toBe(0);
+    });
+  });
+
+  describe('a route that takes no query token', () => {
+    // `?auth=` is a credential on the routes that document it — the two subscribe routes —
+    // not on any URL a client can type. The rule is keyed by route rather than by method,
+    // so a path the server does not serve reads no token out of the query string and is
+    // refused for the ordinary reason, rather than authenticating its way to a `404`.
+    it('does not accept ?auth= on an unknown path', async () => {
+      const res = await app.inject({ method: 'GET', url: `/no-such-path?auth=${token}` });
+
+      expect(res.statusCode).toBe(401);
+      expect((res.json() as { error: string }).error).toBe(AUTH_RULE);
+    });
+
+    it('still answers an authenticated unknown path with 404, given the header', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/no-such-path',
+        headers: bearer(token),
+      });
+
+      expect(res.statusCode).toBe(404);
+    });
+  });
+
   // The subscribe socket needs a real handshake, which `app.inject` cannot perform.
   describe('GET /:topic/ws', () => {
     let wsBase: string;

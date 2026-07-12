@@ -13,7 +13,7 @@ Notes: <cause, workaround, or fix once known>
 
 ---
 
-### 27 — `?auth=` authenticates a `GET` on the `/json` stream but not a `HEAD` of it   [open]   severity: low
+### 27 — `?auth=` authenticates a `GET` on the `/json` stream but not a `HEAD` of it   [fixed]   severity: low
 Repro: mint a token, then ask for the stream's headers with the token in the query — the
 credential the API table lists for that route, and the one a browser-side client has.
 
@@ -41,6 +41,44 @@ Two coherent fixes, and picking between them is a call about the auth surface, n
 accept `?auth=` on a `HEAD` of a subscribe route (the query token already rides in that URL, so
 it grants nothing new), or keep the header-only rule and say so at the table and the paragraph.
 Either way the `auth.ts` docstring must stop resting on "exactly the set of `GET` routes".
+
+Fixed by taking the first, and at its root: the rule is now keyed on the **route** rather than
+the method. `QUERY_TOKEN_ROUTES` (`server/src/auth.ts`) names the two subscribe routes, and
+`presentedToken` reads `?auth=` on those whatever method they are asked with. This settles the
+question the way the docs already answered it — the README says "both subscribe **routes** also
+take the token as `?auth=`", and the API table lists the credential per route, with no method
+anywhere — and it expands nothing: the same token in the same URL already opens the full stream
+on a `GET`, so a `HEAD` of it grants strictly *less* (the stream's headers, no subscription, no
+body) at identical log exposure. Publishing is untouched and still header-only, for the reason it
+always was: a query string is what proxies and access logs write down.
+
+Keying on the route also stops the reasoning going stale again. Keying on `GET` was not wrong
+when it was written — it was a proxy for "the subscribe routes", true only while those were the
+only methods that needed a token, and #22 falsified it by giving the stream a `HEAD`. A route
+does not change what it exposes by acquiring a second method, so the rule now says what it means
+and survives the next method added to a subscribe route.
+
+One deliberate tightening comes with it: an unmatched path no longer reads a token out of the
+query string, because it is not one of the routes that documents the credential. So
+`GET /no-such-path?auth=$TOKEN` is now a `401` where it used to authenticate its way to a `404`.
+Nothing documented relied on that, and the `401`/`404` split #20 describes is unchanged for the
+header, which is what an authenticated probe of an unknown path actually sends.
+
+Docs say the rule rather than leaving it implied: the auth section states that `?auth=` is a
+credential of the two subscribe routes whatever method they are asked with, and of nothing else,
+and the `HEAD` paragraph — which offers the route to "a probe or a proxy health check" — now says
+that such a probe may reuse a subscriber's `?auth=` URL, and that a token-less one hears `401`
+rather than an answer about the route (the #17/#20 line, which it did not draw before).
+
+Pinned by `test/auth.test.ts`: a `HEAD` of the stream authenticates by `?auth=` and by header,
+answers with the stream's headers, and subscribes nobody; no token, an empty `?auth=`, and an
+unissued token by either credential are each a `401`; a publish with `?auth=` is still refused;
+and an unknown path takes no query token while an authenticated one is still the `404`.
+Mutation-checked: restoring the `request.method === 'GET'` test fails the `HEAD`-with-`?auth=`
+case and the unknown-path case, and nothing else. Verified against the compiled server —
+`HEAD /mytopic/json?auth=$TOKEN` returns `200 application/x-ndjson` with no body where it
+returned `401`, the `GET` of that URL still streams a published message, `POST /mytopic?auth=`
+is still `401`, and a refused topic is still `400`.
 
 ### 26 — the `log_format` nginx snippet cannot be uncommented where it is written   [fixed]   severity: medium
 Repro: follow the comment in `deploy/nginx.conf` that offers a way to keep a `?auth=` token out
