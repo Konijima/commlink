@@ -4,8 +4,9 @@ The native Android app: a background subscriber that holds a WebSocket to a comm
 server and turns incoming messages into system notifications — with no Google Play
 Services, Firebase, or FCM.
 
-> **Not built yet.** This directory is a placeholder; the app is scheduled after the
-> server is complete. See [`../TODO.md`](../TODO.md).
+> **Not built yet.** This directory is still a placeholder — but the server it subscribes to
+> is complete, so the app is what comes next rather than what comes later. The first step is
+> the Gradle scaffold; see [`../TODO.md`](../TODO.md).
 
 ## Planned stack
 

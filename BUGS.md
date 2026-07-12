@@ -13,6 +13,33 @@ Notes: <cause, workaround, or fix once known>
 
 ---
 
+### 28 — the routes that accept `?auth=` are named twice, and the second list can go stale   [open]   severity: low
+Repro: none today — it is a latent break, not a live one. Rename a subscribe route, or add a
+third, and `?auth=` silently stops working on it while the header keeps working:
+
+```
+# change the stream's path in server/src/stream.ts, and nothing here follows it
+GET /mytopic/stream?auth=$TOKEN   -> 401   (the header still opens it)
+```
+
+Notes: `QUERY_TOKEN_ROUTES` (`server/src/auth.ts`) lists `/:topic/ws` and `/:topic/json` as
+string literals, and those same two paths are declared independently where the routes are
+registered (`server/src/subscribe.ts`, `server/src/stream.ts`). Nothing ties the two lists
+together, so the auth rule is a *copy* of the route table rather than a view of it, and a
+change to one does not reach the other.
+
+That is the shape of #27 again, one level up. #27 was a rule keyed on `GET` as a proxy for
+"the subscribe routes" — true when written, falsified when the stream gained a `HEAD`. Keying
+on the route fixed the staleness that had already bitten; naming the routes by hand leaves a
+second copy that can go stale the same way, just more slowly. The fix that survives is to
+derive the set from the routes as they are registered, or to pin it with a test that fails if
+the registered subscribe routes and this set ever disagree.
+
+It fails closed, which is why it is low and not high: a route this list has lost simply refuses
+the query token and answers `401`, so a stale copy costs a browser subscriber its only
+credential — it never hands one out. No behaviour is wrong today; both paths are correct and
+pinned by `test/auth.test.ts`.
+
 ### 27 — `?auth=` authenticates a `GET` on the `/json` stream but not a `HEAD` of it   [fixed]   severity: low
 Repro: mint a token, then ask for the stream's headers with the token in the query — the
 credential the API table lists for that route, and the one a browser-side client has.

@@ -84,7 +84,11 @@ before the Android client is built against it.
 
 ## Server (v0.1)
 
-The self-hostable pub/sub core.
+The self-hostable pub/sub core. **Complete.** It publishes, fans out over both transports,
+replays, authenticates, rate-limits and expires; the suite is green and the built server runs
+under the shipped unit. The two items left open below are **deferred** — each says why — and
+neither blocks the Android client, which is the next thing to build. A regression or a security
+bug in the server still outranks everything; a further docs nit does not.
 
 ### Docs & deployment accuracy
 - [x] Split the `log_format` snippet in `deploy/nginx.conf` so it can be uncommented where it is
@@ -128,10 +132,6 @@ The self-hostable pub/sub core.
       exist — every path before the first start, since the unit's `StateDirectory=` creates it *at*
       first start — threw a stack trace naming neither the command nor the setting; they now refuse
       in their own voice and name `DB_PATH`. The deploy guide says to start the service, then mint.
-- [ ] Correct the status codes the subscribe docs promise for an over-long topic list
-      (`BUGS.md#23`): it is a `414` from the router, not the route's `400`, and on the socket
-      it arrives before the upgrade rather than as a `1008` close.
-
 ### Auth & safety
 - [x] Disconnect a subscriber whose token is revoked. A connection is authenticated
       once, at the upgrade, so a revoked subscriber used to keep its open stream until it
@@ -213,15 +213,39 @@ The self-hostable pub/sub core.
       and `engines`; the matrix pins 22 (the real floor) and 24 (the current LTS). A single
       matrix-independent `verify` job gates on all legs, so branch protection keeps one stable
       required check as versions come and go.
-- [ ] `deploy/`: a systemd unit and a TLS reverse-proxy (Caddy) snippet. Both files
-      exist and the built server now starts (`BUGS.md#1`). The unit carries a baseline of
-      process sandboxing, with stronger filesystem isolation documented and commented for
-      hosts that support it; both the unit and its sandboxing stay unchecked until they
-      have been run end-to-end and confirmed with `systemd-analyze security`.
+### Deferred
+
+Open, not dropped. Neither blocks the Android client, and both are cheap to pick up later.
+
+- [ ] Correct the status codes the subscribe docs promise for an over-long topic list
+      (`BUGS.md#23`): it is a `414` from the router, not the route's `400`, and on the socket
+      it arrives before the upgrade rather than as a `1008` close. *Deferred: a docs-only
+      correction to a status code no client branches on today, behind the client itself.*
+- [ ] Confirm the shipped `deploy/` files end-to-end: run the systemd unit and the TLS
+      reverse-proxy snippet on a real host and check the unit's sandboxing with
+      `systemd-analyze security`. Both files exist and the built server starts under them
+      (`BUGS.md#1`); the unit carries a baseline of process sandboxing, with stronger
+      filesystem isolation documented and commented for hosts that support it. *Deferred:
+      needs a host with systemd to confirm against — it cannot be checked from the test
+      suite, so it waits for a machine rather than for a change.*
+- [ ] Derive the routes that accept `?auth=` from the routes themselves (`BUGS.md#28`),
+      rather than repeating their paths in a second list that can go stale. *Deferred: it
+      fails closed and no route path is changing right now, so it is a hardening of the fix
+      for `BUGS.md#27`, not a live bug.*
 
 ## Android app (v0.2)
 
-Native Kotlin client, min SDK 26, Jetpack Compose, no Google Play Services.
+Native Kotlin client, min SDK 26, Jetpack Compose, no Google Play Services. **This is the
+next thing to build** — the server it talks to is done and running.
+
+### Project setup
+
+- [ ] Scaffold the Gradle project so there is something to build: a Gradle wrapper, an `app`
+      module (Kotlin, Compose, min SDK 26, no Play Services), and the reverse-DNS application
+      id `android/README.md` names. It builds and its unit tests run from the command line
+      with `./gradlew test` and `./gradlew assembleDebug`.
+- [ ] Add a CI job that builds the app and runs its unit tests, so the client is covered the
+      way the server is. It gates alongside the existing `verify` job.
 
 ### Connection service
 - [ ] `SubscriberService` — a `START_STICKY` foreground service holding one multiplexed
